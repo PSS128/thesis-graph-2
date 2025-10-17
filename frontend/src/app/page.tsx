@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import GraphCanvas from './components/GraphCanvas'
+import EdgeRationaleCard from './components/EdgeRationaleCard'
 
 // ---------- Types ----------
 type CitationRef = {
@@ -136,6 +137,21 @@ export default function Home() {
   // interactive graph editing
   const [edgeMode, setEdgeMode] = useState<boolean>(false)
   const [newEdgeRelation, setNewEdgeRelation] = useState<'SUPPORTS' | 'CONTRADICTS'>('SUPPORTS')
+
+  // edge rationale modal state
+  type PendingEdge = {
+    from_id: string
+    to_id: string
+    type: string
+  }
+  const [pendingEdge, setPendingEdge] = useState<PendingEdge | null>(null)
+  const [edgeRationale, setEdgeRationale] = useState<{
+    mechanisms: string[]
+    assumptions: string[]
+    likely_confounders: string[]
+    prior_evidence_types: string[]
+  } | null>(null)
+  const [fetchingRationale, setFetchingRationale] = useState(false)
 
   // ---------------- Effects ----------------
   useEffect(() => {
@@ -578,20 +594,79 @@ export default function Home() {
     setSelected((prev) => ({ ...prev, [id]: true }))
   }
 
-  function createEdge(from_id: string, to_id: string) {
+  async function createEdge(from_id: string, to_id: string) {
     if (from_id === to_id) return
     const edgeType = newEdgeRelation === 'SUPPORTS' ? 'CAUSES' : 'CONTRADICTS'
     const exists = edges.some(
       (e) => e.from_id === from_id && e.to_id === to_id && getEdgeType(e) === edgeType
     )
     if (exists) return
-    setEdges((prev) => [...prev, {
-      from_id,
-      to_id,
-      type: edgeType,
-      status: 'PROPOSED',
-      relation: newEdgeRelation
-    }])
+
+    // Set up pending edge and fetch rationale
+    setPendingEdge({ from_id, to_id, type: edgeType })
+    setEdgeRationale(null)
+    setFetchingRationale(true)
+
+    try {
+      const fromNode = nodes.find((n) => n.id === from_id)
+      const toNode = nodes.find((n) => n.id === to_id)
+      if (!fromNode || !toNode) {
+        throw new Error('Node not found')
+      }
+
+      const r = await fetch(`${API}/edge/rationale`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          a_name: getNodeText(fromNode),
+          b_name: getNodeText(toNode)
+        })
+      })
+
+      if (!r.ok) throw new Error(await r.text())
+      const data = await r.json()
+      setEdgeRationale(data)
+    } catch (e: any) {
+      console.error('Failed to fetch edge rationale:', e)
+      // If fetching rationale fails, still show modal but with empty rationale
+      setEdgeRationale({
+        mechanisms: [],
+        assumptions: [],
+        likely_confounders: [],
+        prior_evidence_types: []
+      })
+    } finally {
+      setFetchingRationale(false)
+    }
+  }
+
+  function acceptEdge() {
+    if (!pendingEdge) return
+    setEdges((prev) => [
+      ...prev,
+      {
+        from_id: pendingEdge.from_id,
+        to_id: pendingEdge.to_id,
+        type: pendingEdge.type as any,
+        status: 'ACCEPTED',
+        relation: newEdgeRelation,
+        mechanisms: edgeRationale?.mechanisms || [],
+        assumptions: edgeRationale?.assumptions || [],
+        confounders: edgeRationale?.likely_confounders || []
+      }
+    ])
+    setPendingEdge(null)
+    setEdgeRationale(null)
+  }
+
+  function rejectEdge() {
+    setPendingEdge(null)
+    setEdgeRationale(null)
+  }
+
+  function cancelEdgeModal() {
+    setPendingEdge(null)
+    setEdgeRationale(null)
   }
 
   // --- UI helpers ---
@@ -1083,6 +1158,36 @@ export default function Home() {
           </div>
         ) : null}
       </section>
+
+      {/* Edge Rationale Modal */}
+      {pendingEdge && (
+        <>
+          {/* Backdrop */}
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.5)',
+              zIndex: 999
+            }}
+            onClick={cancelEdgeModal}
+          />
+          {/* Modal */}
+          <EdgeRationaleCard
+            fromName={getNodeText(nodes.find((n) => n.id === pendingEdge.from_id) || { id: '' })}
+            toName={getNodeText(nodes.find((n) => n.id === pendingEdge.to_id) || { id: '' })}
+            edgeType={pendingEdge.type}
+            rationale={edgeRationale}
+            loading={fetchingRationale}
+            onAccept={acceptEdge}
+            onReject={rejectEdge}
+            onClose={cancelEdgeModal}
+          />
+        </>
+      )}
     </main>
   )
 }

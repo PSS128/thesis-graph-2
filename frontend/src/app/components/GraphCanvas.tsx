@@ -193,6 +193,7 @@ export default function GraphCanvas({
     if (e.relation) return e.relation
     return 'SUPPORTS' // Default for CAUSES, MODERATES, MEDIATES
   }
+  const getEdgeStatus = (e: EdgeT): string => e.status || 'ACCEPTED'
 
   // Render helpers
   const NODE_R = 22
@@ -239,8 +240,12 @@ export default function GraphCanvas({
           const to = renderedNodes.find((n) => n.id === e.to_id)
           if (!from || !to) return null
           const relation = getEdgeRelation(e)
+          const status = getEdgeStatus(e)
           const stroke = colorForRel(relation)
           const markerUrl = relation === 'SUPPORTS' ? `url(#${markerIdSupport})` : `url(#${markerIdContr})`
+          // Proposed edges are dashed, accepted are solid
+          const dashArray = status === 'PROPOSED' ? '5,5' : '0'
+          const opacity = status === 'PROPOSED' ? 0.6 : 0.9
           return (
             <g key={`E-${idx}`}>
               <line
@@ -250,8 +255,9 @@ export default function GraphCanvas({
                 y2={to.y}
                 stroke={stroke}
                 strokeWidth={2.5}
+                strokeDasharray={dashArray}
                 markerEnd={markerUrl}
-                opacity={0.9}
+                opacity={opacity}
               />
               {/* relation label at mid-point */}
               <text

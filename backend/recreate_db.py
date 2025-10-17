@@ -35,9 +35,9 @@ def main():
                 # Copy instead of move to avoid file lock issues
                 import shutil
                 shutil.copy2(db_path, backup_path)
-                print(f"✅ Backup created: {backup_path}")
+                print(f"[OK] Backup created: {backup_path}")
             except Exception as e:
-                print(f"⚠️  Warning: Could not create backup: {e}")
+                print(f"[WARNING] Could not create backup: {e}")
                 response = input("Continue without backup? (y/N): ")
                 if response.lower() != 'y':
                     print("Aborted.")
@@ -46,9 +46,9 @@ def main():
         print(f"Deleting old database: {db_path}")
         try:
             db_path.unlink()
-            print("✅ Old database deleted")
+            print("[OK] Old database deleted")
         except Exception as e:
-            print(f"❌ Error deleting database: {e}")
+            print(f"[ERROR] Error deleting database: {e}")
             print("Make sure no processes are using the database file.")
             print("Try stopping the FastAPI server first.")
             return
@@ -56,13 +56,13 @@ def main():
     print("\nCreating new database with updated schema...")
     try:
         SQLModel.metadata.create_all(engine)
-        print("✅ Database recreated successfully!")
+        print("[OK] Database recreated successfully!")
         print(f"\nNew schema includes:")
         print("  - GraphNode: name, kind, definition, synonyms, measurement_ideas, citations")
         print("  - GraphEdge: type, status, mechanisms, assumptions, confounders, citations")
         print("\nYou can now start the FastAPI server.")
     except Exception as e:
-        print(f"❌ Error creating database: {e}")
+        print(f"[ERROR] Error creating database: {e}")
         raise
 
 
