@@ -5,18 +5,46 @@ import ReactMarkdown from 'react-markdown'
 import GraphCanvas from './components/GraphCanvas'
 
 // ---------- Types ----------
+type CitationRef = {
+  doc: string
+  span: [number, number]
+}
+
 type NodeT = {
   id: string
-  text: string
-  type: 'THESIS' | 'CLAIM'
+  // New schema fields
+  name?: string
+  kind?: 'THESIS' | 'VARIABLE' | 'ASSUMPTION'
+  definition?: string
+  synonyms?: string[]
+  measurement_ideas?: string[]
+  citations?: CitationRef[]
+  // Legacy fields (for backward compatibility)
+  text?: string
+  type?: 'THESIS' | 'CLAIM'
   x?: number
   y?: number
+}
+
+type EdgeCitation = {
+  doc: string
+  span: [number, number]
+  support: 'supports' | 'contradicts'
+  strength: number
 }
 
 type EdgeT = {
   from_id: string
   to_id: string
-  relation: 'SUPPORTS' | 'CONTRADICTS'
+  // New schema fields
+  type?: 'CAUSES' | 'MODERATES' | 'MEDIATES' | 'CONTRADICTS'
+  status?: 'PROPOSED' | 'ACCEPTED' | 'REJECTED'
+  mechanisms?: string[]
+  assumptions?: string[]
+  confounders?: string[]
+  citations?: EdgeCitation[]
+  // Legacy fields (for backward compatibility)
+  relation?: 'SUPPORTS' | 'CONTRADICTS'
   rationale?: string
   confidence?: number
 }
@@ -42,6 +70,23 @@ function normalizeNodes(d: any): NodeT[] {
 }
 function normalizeEdges(d: any): EdgeT[] {
   return Array.isArray(d) ? d : d?.edges ?? []
+}
+
+// ---------- Schema helpers ----------
+function getNodeText(n: NodeT): string {
+  return n.name || n.text || 'Untitled'
+}
+
+function getNodeKind(n: NodeT): string {
+  return n.kind || n.type || 'VARIABLE'
+}
+
+function getEdgeType(e: EdgeT): string {
+  return e.type || e.relation || 'CAUSES'
+}
+
+function getEdgeStatus(e: EdgeT): string {
+  return e.status || 'ACCEPTED'
 }
 
 // ================================================================
@@ -201,7 +246,7 @@ export default function Home() {
       const r = await fetch(`${API}/retrieve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: n.text, top_k: 3 })
+        body: JSON.stringify({ query: getNodeText(n), top_k: 3 })
       })
       if (!r.ok) throw new Error(await r.text())
       const data: Citation[] = await r.json()
@@ -365,7 +410,7 @@ export default function Home() {
 
   // ---------------- Manual edits ----------------
   function updateNodeText(id: string, text: string) {
-    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, text } : n)))
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, name: text, text } : n)))
   }
   function deleteNode(id: string) {
     setNodes((prev) => prev.filter((n) => n.id !== id))
@@ -459,7 +504,7 @@ export default function Home() {
           const r = await fetch(`${API}/retrieve`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: n.text, top_k: 2 })
+            body: JSON.stringify({ query: getNodeText(n), top_k: 2 })
           })
           if (!r.ok) return
           const cs: Citation[] = await r.json()
@@ -528,17 +573,25 @@ export default function Home() {
   function addNode(kind: 'THESIS' | 'CLAIM') {
     const id = `N${Math.random().toString(36).slice(2, 7)}`
     const label = kind === 'THESIS' ? 'New thesis' : 'New claim'
-    setNodes((prev) => [...prev, { id, text: label, type: kind }])
+    const nodeKind = kind === 'THESIS' ? 'THESIS' : 'VARIABLE'
+    setNodes((prev) => [...prev, { id, name: label, kind: nodeKind, text: label, type: kind }])
     setSelected((prev) => ({ ...prev, [id]: true }))
   }
 
   function createEdge(from_id: string, to_id: string) {
     if (from_id === to_id) return
+    const edgeType = newEdgeRelation === 'SUPPORTS' ? 'CAUSES' : 'CONTRADICTS'
     const exists = edges.some(
-      (e) => e.from_id === from_id && e.to_id === to_id && e.relation === newEdgeRelation
+      (e) => e.from_id === from_id && e.to_id === to_id && getEdgeType(e) === edgeType
     )
     if (exists) return
-    setEdges((prev) => [...prev, { from_id, to_id, relation: newEdgeRelation }])
+    setEdges((prev) => [...prev, {
+      from_id,
+      to_id,
+      type: edgeType,
+      status: 'PROPOSED',
+      relation: newEdgeRelation
+    }])
   }
 
   // --- UI helpers ---
@@ -851,8 +904,13 @@ export default function Home() {
                     onChange={() => toggleSelected(n.id)}
                     title="Include in composition"
                   />
-                  <b>{n.type}</b>
+                  <b>{getNodeKind(n)}</b>
                   <span style={{ color: '#999' }}>({n.id})</span>
+                  {n.definition && (
+                    <span style={{ fontSize: 12, color: '#666', marginLeft: 8 }}>
+                      {n.definition}
+                    </span>
+                  )}
                   <button
                     onClick={() => citeNode(n)}
                     disabled={busy !== 'idle'}
@@ -871,10 +929,17 @@ export default function Home() {
 
                 {/* inline rename */}
                 <input
-                  value={n.text}
+                  value={getNodeText(n)}
                   onChange={(e) => updateNodeText(n.id, e.target.value)}
                   style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
                 />
+
+                {/* Show synonyms if available */}
+                {n.synonyms && n.synonyms.length > 0 && (
+                  <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
+                    Synonyms: {n.synonyms.join(', ')}
+                  </div>
+                )}
 
                 {/* citations */}
                 {citations[n.id]?.length ? (
@@ -902,19 +967,52 @@ export default function Home() {
         ) : (
           <ul>
             {edges.map((e, i) => (
-              <li key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {e.from_id} → {e.to_id} <i>({e.relation})</i>
-                {e.confidence != null ? (
-                  <span style={{ color: '#999' }}>conf: {e.confidence.toFixed(2)}</span>
-                ) : null}
-                {e.rationale ? <div style={{ color: '#555' }}>{e.rationale}</div> : null}
-                <button
-                  onClick={() => deleteEdge(i)}
-                  style={{ marginLeft: 8, padding: '2px 8px', border: '1px solid #c00', color: '#c00', borderRadius: 6 }}
-                  title="Delete edge"
-                >
-                  Delete
-                </button>
+              <li key={i} style={{ display: 'grid', gap: 4, marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {e.from_id} → {e.to_id} <i>({getEdgeType(e)})</i>
+                  <span style={{
+                    fontSize: 11,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: getEdgeStatus(e) === 'ACCEPTED' ? '#e6ffed' : '#fff5f5',
+                    color: getEdgeStatus(e) === 'ACCEPTED' ? '#237804' : '#d48806'
+                  }}>
+                    {getEdgeStatus(e)}
+                  </span>
+                  {e.confidence != null ? (
+                    <span style={{ color: '#999' }}>conf: {e.confidence.toFixed(2)}</span>
+                  ) : null}
+                  <button
+                    onClick={() => deleteEdge(i)}
+                    style={{ marginLeft: 'auto', padding: '2px 8px', border: '1px solid #c00', color: '#c00', borderRadius: 6 }}
+                    title="Delete edge"
+                  >
+                    Delete
+                  </button>
+                </div>
+
+                {/* Show mechanisms if available */}
+                {e.mechanisms && e.mechanisms.length > 0 && (
+                  <div style={{ fontSize: 12, color: '#555' }}>
+                    <strong>Mechanisms:</strong> {e.mechanisms.join(', ')}
+                  </div>
+                )}
+
+                {/* Show assumptions if available */}
+                {e.assumptions && e.assumptions.length > 0 && (
+                  <div style={{ fontSize: 12, color: '#555' }}>
+                    <strong>Assumptions:</strong> {e.assumptions.join(', ')}
+                  </div>
+                )}
+
+                {/* Show confounders if available */}
+                {e.confounders && e.confounders.length > 0 && (
+                  <div style={{ fontSize: 12, color: '#d48806' }}>
+                    <strong>Potential confounders:</strong> {e.confounders.join(', ')}
+                  </div>
+                )}
+
+                {e.rationale ? <div style={{ fontSize: 12, color: '#555' }}>{e.rationale}</div> : null}
               </li>
             ))}
           </ul>

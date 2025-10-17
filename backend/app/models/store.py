@@ -14,9 +14,23 @@ class Project(SQLModel, table=True):
 class GraphNode(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: int = Field(index=True)
-    node_id: str = Field(index=True)
-    text: str
-    type: str  # "THESIS" | "CLAIM"
+    node_id: str = Field(index=True, unique=True)
+
+    # Core fields
+    name: str  # Canonical variable name
+    kind: str = Field(default="VARIABLE")  # "THESIS" | "VARIABLE" | "ASSUMPTION"
+    definition: Optional[str] = None  # Short definition
+
+    # Legacy field (kept for backward compatibility)
+    text: Optional[str] = None
+    type: Optional[str] = None  # Deprecated: use 'kind' instead
+
+    # Metadata
+    synonyms: Optional[str] = Field(default=None)  # JSON array of strings
+    measurement_ideas: Optional[str] = Field(default=None)  # JSON array of strings
+    citations: Optional[str] = Field(default=None)  # JSON array: [{"doc":"d7","span":[1023,1101]}]
+
+    # Position (for UI)
     x: Optional[float] = None
     y: Optional[float] = None
 
@@ -24,10 +38,26 @@ class GraphNode(SQLModel, table=True):
 class GraphEdge(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: int = Field(index=True)
-    from_id: str
-    to_id: str
-    relation: str  # "SUPPORTS" | "CONTRADICTS"
-    rationale: Optional[str] = None
+    from_id: str = Field(index=True)
+    to_id: str = Field(index=True)
+
+    # Edge type and status
+    type: str = Field(default="CAUSES")  # "CAUSES" | "MODERATES" | "MEDIATES" | "CONTRADICTS"
+    status: str = Field(default="PROPOSED")  # "PROPOSED" | "ACCEPTED" | "REJECTED"
+
+    # Legacy field (kept for backward compatibility)
+    relation: Optional[str] = None  # Deprecated: use 'type' instead
+
+    # Rationale fields (JSON arrays)
+    mechanisms: Optional[str] = Field(default=None)  # JSON array of strings
+    assumptions: Optional[str] = Field(default=None)  # JSON array of strings
+    confounders: Optional[str] = Field(default=None)  # JSON array of strings
+
+    # Evidence
+    citations: Optional[str] = Field(default=None)  # JSON array: [{"doc":"d12","span":[220,300],"support":"supports","strength":0.73}]
+
+    # Legacy/supplemental fields
+    rationale: Optional[str] = None  # Free-form text
     confidence: Optional[float] = None
 
 

@@ -79,13 +79,39 @@ class RenameProjectIn(BaseModel):
 
 # ---------- Helpers ----------
 def _node_to_dict(n: GraphNode) -> dict:
-    return {"id": n.node_id, "text": n.text, "type": n.type, "x": n.x, "y": n.y}
+    """Convert GraphNode to dict, supporting both old and new schema"""
+    import json
+
+    return {
+        "id": n.node_id,
+        # Support both old (text/type) and new (name/kind) fields
+        "text": n.text or n.name,  # Fallback to name if text is None
+        "type": n.type or n.kind,  # Fallback to kind if type is None
+        "name": n.name if hasattr(n, 'name') else n.text,
+        "kind": n.kind if hasattr(n, 'kind') else n.type,
+        "definition": n.definition if hasattr(n, 'definition') else None,
+        "synonyms": json.loads(n.synonyms) if n.synonyms else [],
+        "measurement_ideas": json.loads(n.measurement_ideas) if n.measurement_ideas else [],
+        "citations": json.loads(n.citations) if n.citations else [],
+        "x": n.x,
+        "y": n.y,
+    }
 
 def _edge_to_dict(e: GraphEdge) -> dict:
+    """Convert GraphEdge to dict, supporting both old and new schema"""
+    import json
+
     return {
         "from_id": e.from_id,
         "to_id": e.to_id,
-        "relation": e.relation,
+        # Support both old (relation) and new (type) fields
+        "relation": e.relation or e.type,  # Fallback to type if relation is None
+        "type": e.type if hasattr(e, 'type') else e.relation,
+        "status": e.status if hasattr(e, 'status') else "ACCEPTED",
+        "mechanisms": json.loads(e.mechanisms) if e.mechanisms else [],
+        "assumptions": json.loads(e.assumptions) if e.assumptions else [],
+        "confounders": json.loads(e.confounders) if e.confounders else [],
+        "citations": json.loads(e.citations) if e.citations else [],
         "rationale": e.rationale,
         "confidence": e.confidence,
     }
@@ -157,16 +183,28 @@ async def save_project(
             session.delete(e)
 
         # insert nodes
+        import json
         for n in nodes:
             nid = n.get("id")
             if not nid:
                 continue
+
+            # Support both old and new schema
+            name = n.get("name") or n.get("text") or "Untitled Node"
+            kind = n.get("kind") or n.get("type") or "VARIABLE"
+
             session.add(
                 GraphNode(
                     project_id=project_id,
                     node_id=str(nid),
-                    text=str(n.get("text", "")),
-                    type=str(n.get("type", "CLAIM")),
+                    name=str(name),
+                    kind=str(kind),
+                    definition=n.get("definition"),
+                    text=n.get("text"),  # Keep for backward compatibility
+                    type=n.get("type"),  # Keep for backward compatibility
+                    synonyms=json.dumps(n.get("synonyms", [])) if n.get("synonyms") else None,
+                    measurement_ideas=json.dumps(n.get("measurement_ideas", [])) if n.get("measurement_ideas") else None,
+                    citations=json.dumps(n.get("citations", [])) if n.get("citations") else None,
                     x=(n.get("x") if isinstance(n.get("x"), (int, float)) else None),
                     y=(n.get("y") if isinstance(n.get("y"), (int, float)) else None),
                 )
@@ -178,12 +216,23 @@ async def save_project(
             t = e.get("to_id")
             if not f or not t:
                 continue
+
+            # Support both old and new schema
+            edge_type = e.get("type") or e.get("relation") or "CAUSES"
+            edge_status = e.get("status") or "PROPOSED"
+
             session.add(
                 GraphEdge(
                     project_id=project_id,
                     from_id=str(f),
                     to_id=str(t),
-                    relation=str(e.get("relation", "SUPPORTS")),
+                    type=str(edge_type),
+                    status=str(edge_status),
+                    relation=e.get("relation"),  # Keep for backward compatibility
+                    mechanisms=json.dumps(e.get("mechanisms", [])) if e.get("mechanisms") else None,
+                    assumptions=json.dumps(e.get("assumptions", [])) if e.get("assumptions") else None,
+                    confounders=json.dumps(e.get("confounders", [])) if e.get("confounders") else None,
+                    citations=json.dumps(e.get("citations", [])) if e.get("citations") else None,
                     rationale=e.get("rationale"),
                     confidence=e.get("confidence"),
                 )
@@ -250,13 +299,20 @@ def import_project(payload: ImportPayload, session: Session = Depends(get_sessio
     session.commit()
     session.refresh(proj)
 
+    import json
     for n in payload.nodes:
         session.add(
             GraphNode(
                 project_id=proj.id,
                 node_id=n.id,
-                text=n.text,
-                type=n.type,
+                name=getattr(n, 'name', n.text),
+                kind=getattr(n, 'kind', n.type),
+                definition=getattr(n, 'definition', None),
+                text=n.text,  # Keep for backward compatibility
+                type=n.type,  # Keep for backward compatibility
+                synonyms=json.dumps(getattr(n, 'synonyms', [])) if hasattr(n, 'synonyms') and n.synonyms else None,
+                measurement_ideas=json.dumps(getattr(n, 'measurement_ideas', [])) if hasattr(n, 'measurement_ideas') and n.measurement_ideas else None,
+                citations=json.dumps(getattr(n, 'citations', [])) if hasattr(n, 'citations') and n.citations else None,
                 x=n.x,
                 y=n.y,
             )
@@ -267,7 +323,13 @@ def import_project(payload: ImportPayload, session: Session = Depends(get_sessio
                 project_id=proj.id,
                 from_id=e.from_id,
                 to_id=e.to_id,
-                relation=e.relation,
+                type=getattr(e, 'type', e.relation),
+                status=getattr(e, 'status', 'ACCEPTED'),
+                relation=e.relation,  # Keep for backward compatibility
+                mechanisms=json.dumps(getattr(e, 'mechanisms', [])) if hasattr(e, 'mechanisms') and e.mechanisms else None,
+                assumptions=json.dumps(getattr(e, 'assumptions', [])) if hasattr(e, 'assumptions') and e.assumptions else None,
+                confounders=json.dumps(getattr(e, 'confounders', [])) if hasattr(e, 'confounders') and e.confounders else None,
+                citations=json.dumps(getattr(e, 'citations', [])) if hasattr(e, 'citations') and e.citations else None,
                 rationale=e.rationale,
                 confidence=e.confidence,
             )
