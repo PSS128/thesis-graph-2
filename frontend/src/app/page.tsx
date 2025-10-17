@@ -97,7 +97,7 @@ export default function Home() {
   const [msg, setMsg] = useState('loading...')
   const [thesis, setThesis] = useState('')
   const [input, setInput] = useState(
-    'Paste text here. More sleep improves focus. Focus boosts grades.'
+    'Technology broadens access to educational resources. Interactive tools deepen engagement and retention. Data-driven feedback accelerates skill development. Personalization fosters equity and efficiency. Responsible implementation is essential.'
   )
 
   // graph state

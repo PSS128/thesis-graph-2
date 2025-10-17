@@ -4,8 +4,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 type NodeT = {
   id: string
-  text: string
-  type: 'THESIS' | 'CLAIM'
+  // New schema fields
+  name?: string
+  kind?: 'THESIS' | 'VARIABLE' | 'ASSUMPTION'
+  definition?: string
+  // Legacy fields (for backward compatibility)
+  text?: string
+  type?: 'THESIS' | 'CLAIM'
   x?: number
   y?: number
 }
@@ -13,7 +18,11 @@ type NodeT = {
 type EdgeT = {
   from_id: string
   to_id: string
-  relation: 'SUPPORTS' | 'CONTRADICTS'
+  // New schema fields
+  type?: 'CAUSES' | 'MODERATES' | 'MEDIATES' | 'CONTRADICTS'
+  status?: 'PROPOSED' | 'ACCEPTED' | 'REJECTED'
+  // Legacy fields (for backward compatibility)
+  relation?: 'SUPPORTS' | 'CONTRADICTS'
   rationale?: string
   confidence?: number
 }
@@ -175,10 +184,20 @@ export default function GraphCanvas({
     [nodes, pos]
   )
 
+  // Helper functions for backward compatibility
+  const getNodeText = (n: NodeT): string => n.name || n.text || 'Untitled'
+  const getNodeType = (n: NodeT): string => n.kind || n.type || 'VARIABLE'
+  const getEdgeRelation = (e: EdgeT): string => {
+    // Map new types to old relations
+    if (e.type === 'CONTRADICTS') return 'CONTRADICTS'
+    if (e.relation) return e.relation
+    return 'SUPPORTS' // Default for CAUSES, MODERATES, MEDIATES
+  }
+
   // Render helpers
   const NODE_R = 22
-  const colorForType = (t: NodeT['type']) => (t === 'THESIS' ? '#164' : '#345')
-  const colorForRel = (r: EdgeT['relation']) => (r === 'SUPPORTS' ? '#33a852' : '#c0392b')
+  const colorForType = (t: string) => (t === 'THESIS' ? '#164' : '#345')
+  const colorForRel = (r: string) => (r === 'SUPPORTS' ? '#33a852' : '#c0392b')
 
   // Arrow marker ids
   const markerIdSupport = 'arrow-support'
@@ -219,8 +238,9 @@ export default function GraphCanvas({
           const from = renderedNodes.find((n) => n.id === e.from_id)
           const to = renderedNodes.find((n) => n.id === e.to_id)
           if (!from || !to) return null
-          const stroke = colorForRel(e.relation)
-          const markerUrl = e.relation === 'SUPPORTS' ? `url(#${markerIdSupport})` : `url(#${markerIdContr})`
+          const relation = getEdgeRelation(e)
+          const stroke = colorForRel(relation)
+          const markerUrl = relation === 'SUPPORTS' ? `url(#${markerIdSupport})` : `url(#${markerIdContr})`
           return (
             <g key={`E-${idx}`}>
               <line
@@ -242,7 +262,7 @@ export default function GraphCanvas({
                 textAnchor="middle"
                 style={{ pointerEvents: 'none' }}
               >
-                {e.relation.toLowerCase()}
+                {relation.toLowerCase()}
               </text>
             </g>
           )
@@ -253,7 +273,8 @@ export default function GraphCanvas({
           const sel = !!selectedIds[n.id]
           const isPending = edgeMode && pendingFrom === n.id
           const fill = '#f6fbe9'
-          const stroke = colorForType(n.type)
+          const nodeType = getNodeType(n)
+          const stroke = colorForType(nodeType)
 
           return (
             <g
@@ -283,7 +304,7 @@ export default function GraphCanvas({
                 fill="#999"
                 style={{ pointerEvents: 'none' }}
               >
-                {n.type}
+                {nodeType}
               </text>
               <text
                 x={n.x}
@@ -293,7 +314,7 @@ export default function GraphCanvas({
                 fill="#222"
                 style={{ pointerEvents: 'none' }}
               >
-                {truncate(n.text, 36)}
+                {truncate(getNodeText(n), 36)}
               </text>
               {/* a subtle dot below selected nodes */}
               {sel ? (
