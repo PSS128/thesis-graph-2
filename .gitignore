@@ -14,8 +14,8 @@
 # Remove these two lines if you want to commit the frontend code later.
 # Keep the exceptions if you want a placeholder .gitignore inside.
 # ===========================================
-/frontend/**
-!/frontend/.gitignore
+#/frontend/**
+#!/frontend/.gitignore
 
 # (Artifact-specific rules kept too, harmless if folder is fully ignored)
 # Dependencies / cache / build
