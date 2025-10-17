@@ -216,10 +216,9 @@ def compose_outline_essay(
     )
 
     text, used = _chat(system_prompt, user_prompt, temperature=0.5, max_tokens=1800, json_mode=True)
-    print(f"text is {text}")
+
     # Prefer strict JSON
     data = _extract_json_strict(text) or _extract_json_relaxed(text) or {}
-    print(f"data is {data}")
     if data.get("outline") and data.get("essay_md"):
         return data, used
 
