@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "next": "15.5.4",
+    "pdfjs-dist": "^5.4.296",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-markdown": "^10.1.0",
+    "react-pdf": "^10.2.0",
     "reactflow": "^11.11.4"
   },
   "devDependencies": {

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import dynamic from 'next/dynamic'
 import GraphCanvas from './components/GraphCanvas'
 import EdgeRationaleCard from './components/EdgeRationaleCard'
 import CitationPanel from './components/CitationPanel'
@@ -9,6 +10,12 @@ import NodeExtractCard from './components/NodeExtractCard'
 import NodeContextMenu from './components/NodeContextMenu'
 import MissingPiecesModal from './components/MissingPiecesModal'
 import GraphCritiquePanel from './components/GraphCritiquePanel'
+
+// Dynamically import PDFViewer to avoid SSR issues with react-pdf
+const PDFViewer = dynamic(() => import('./components/PDFViewer'), {
+  ssr: false,
+  loading: () => <div style={{ padding: 40, textAlign: 'center' }}>Loading PDF viewer...</div>
+})
 
 // ---------- Types ----------
 type CitationRef = {
@@ -208,6 +215,12 @@ export default function Home() {
   >([])
   const [fetchingCritique, setFetchingCritique] = useState(false)
 
+  // Phase 5: PDF viewer
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{ name: string; file: File; docId: string }>>([])
+  const [currentPdfFile, setCurrentPdfFile] = useState<File | null>(null)
+  const [currentPdfDocId, setCurrentPdfDocId] = useState<string | null>(null)
+  const [showPdfViewer, setShowPdfViewer] = useState(false)
+
   // ---------------- Effects ----------------
   useEffect(() => {
     fetch(`${API}/`)
@@ -302,7 +315,14 @@ export default function Home() {
       fd.append('title', file.name)
       const r = await fetch(`${API}/ingest/upload`, { method: 'POST', body: fd })
       if (!r.ok) throw new Error(await r.text())
-      await r.json()
+      const result = await r.json()
+
+      // Store file locally for PDF viewer (only for PDFs)
+      if (file.name.toLowerCase().endsWith('.pdf')) {
+        const docId = result.doc_id || `doc_${Date.now()}`
+        setUploadedFiles((prev) => [...prev, { name: file.name, file, docId }])
+      }
+
       alert('File indexed ✅')
     } catch (e: any) {
       alert(`Upload failed:\n${e.message || e}`)
@@ -793,7 +813,10 @@ export default function Home() {
   }
 
   // ---------------- Phase 4: Text → Node Extraction ----------------
-  async function extractNodeFromText(text: string) {
+  async function extractNodeFromText(
+    text: string,
+    sourceRef?: { docId?: string; page?: number; span?: [number, number] }
+  ) {
     setHighlightedText(text)
     setShowNodeExtractCard(true)
     setFetchingExtraction(true)
@@ -806,13 +829,17 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text,
-          existing_names: existingNames
+          existing_names: existingNames,
+          source_ref: sourceRef
+            ? `${sourceRef.docId || 'unknown'}:page${sourceRef.page || 1}`
+            : undefined
         })
       })
 
       if (!r.ok) throw new Error(await r.text())
       const data = await r.json()
-      setNodeExtraction(data)
+      // Store source reference for later use
+      setNodeExtraction({ ...data, _sourceRef: sourceRef })
     } catch (e: any) {
       console.error('Failed to extract node:', e)
       alert(`Node extraction failed:\n${e.message || e}`)
@@ -826,13 +853,24 @@ export default function Home() {
     if (!nodeExtraction) return
 
     const id = `N${Math.random().toString(36).slice(2, 7)}`
+    const sourceRef = (nodeExtraction as any)._sourceRef
+    const citations: CitationRef[] = sourceRef
+      ? [
+          {
+            doc: sourceRef.docId || 'unknown',
+            span: sourceRef.span || [0, 0] as [number, number]
+          }
+        ]
+      : []
+
     const newNode: NodeT = {
       id,
       name: nodeExtraction.name,
       kind: 'VARIABLE',
       definition: nodeExtraction.definition,
       synonyms: nodeExtraction.synonyms,
-      measurement_ideas: nodeExtraction.measurement_ideas
+      measurement_ideas: nodeExtraction.measurement_ideas,
+      citations: citations.length > 0 ? citations : undefined
     }
 
     setNodes((prev) => [...prev, newNode])
@@ -1095,14 +1133,85 @@ export default function Home() {
       </div>
 
       {/* Uploads */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           type="file"
+          accept=".pdf,.txt"
           onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
           disabled={busy !== 'idle'}
         />
         <span style={{ fontSize: 12, color: '#666' }}>Upload PDFs or .txt to enable citations</span>
+        {uploadedFiles.length > 0 && (
+          <>
+            <span style={{ fontSize: 12, color: '#666', marginLeft: 8 }}>|</span>
+            <span style={{ fontSize: 12, color: '#666' }}>Uploaded: {uploadedFiles.length} PDF(s)</span>
+            <button
+              onClick={() => {
+                setShowPdfViewer(!showPdfViewer)
+                if (!showPdfViewer && uploadedFiles.length > 0 && !currentPdfFile) {
+                  setCurrentPdfFile(uploadedFiles[0].file)
+                  setCurrentPdfDocId(uploadedFiles[0].docId)
+                }
+              }}
+              style={{
+                padding: '4px 10px',
+                border: '1px solid #1890ff',
+                color: '#1890ff',
+                borderRadius: 6,
+                background: showPdfViewer ? '#e6f7ff' : '#fff',
+                fontSize: 12
+              }}
+            >
+              {showPdfViewer ? 'Hide' : 'Show'} PDF Viewer
+            </button>
+          </>
+        )}
       </div>
+
+      {/* PDF Viewer Section */}
+      {showPdfViewer && uploadedFiles.length > 0 && (
+        <div
+          style={{
+            border: '2px solid #1890ff',
+            borderRadius: 10,
+            padding: 16,
+            background: '#f0f5ff'
+          }}
+        >
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+            <strong>PDF Document Viewer</strong>
+            <select
+              value={uploadedFiles.findIndex((f) => f.file === currentPdfFile)}
+              onChange={(e) => {
+                const idx = Number(e.target.value)
+                if (idx >= 0 && idx < uploadedFiles.length) {
+                  setCurrentPdfFile(uploadedFiles[idx].file)
+                  setCurrentPdfDocId(uploadedFiles[idx].docId)
+                }
+              }}
+              style={{ padding: '4px 8px', border: '1px solid #adc6ff', borderRadius: 4, fontSize: 12 }}
+            >
+              {uploadedFiles.map((f, i) => (
+                <option key={i} value={i}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            <span style={{ fontSize: 11, color: '#666', marginLeft: 'auto' }}>
+              💡 Select text in the PDF and click "Make Node" to extract
+            </span>
+          </div>
+          {currentPdfFile && (
+            <PDFViewer
+              file={currentPdfFile}
+              docId={currentPdfDocId || undefined}
+              onExtractNode={(text, sourceRef) => {
+                extractNodeFromText(text, sourceRef)
+              }}
+            />
+          )}
+        </div>
+      )}
 
       {/* Inputs */}
       <input
@@ -1204,10 +1313,15 @@ export default function Home() {
             type="checkbox"
             checked={edgeMode}
             onChange={(e) => setEdgeMode(e.target.checked)}
-            title="Click two nodes on the canvas to create an edge"
+            title="Click two nodes OR Shift+drag from one node to another to create an edge"
           />
           <span style={{ fontSize: 12 }}>Edge Mode</span>
         </label>
+        {edgeMode && (
+          <span style={{ fontSize: 11, color: '#666', marginLeft: 4 }}>
+            (💡 Shift+drag to connect)
+          </span>
+        )}
 
         <label style={{ fontSize: 12 }}>
           Relation:{' '}
@@ -1281,15 +1395,34 @@ export default function Home() {
       </div>
 
       {/* Graph */}
-      <GraphCanvas
-        nodes={nodes}
-        edges={edges}
-        onNodesPosChange={applyPositions}
-        edgeMode={edgeMode}
-        onCreateEdge={createEdge}
-        selectedIds={selected}
-        onToggleSelect={toggleSelected}
-      />
+      <div style={{ position: 'relative' }}>
+        <GraphCanvas
+          nodes={nodes}
+          edges={edges}
+          onNodesPosChange={applyPositions}
+          edgeMode={edgeMode}
+          onCreateEdge={createEdge}
+          selectedIds={selected}
+          onToggleSelect={toggleSelected}
+        />
+        {!edgeMode && nodes.length > 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 8,
+              right: 8,
+              fontSize: 11,
+              color: '#999',
+              background: 'rgba(255,255,255,0.9)',
+              padding: '4px 8px',
+              borderRadius: 4,
+              border: '1px solid #e5e5e5'
+            }}
+          >
+            💡 Click node to select/deselect • Drag canvas to lasso-select
+          </div>
+        )}
+      </div>
 
       {/* Nodes + Compose controls */}
       <section>

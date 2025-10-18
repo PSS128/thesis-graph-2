@@ -75,7 +75,17 @@ export default function GraphCanvas({
   // Drag refs
   const dragId = useRef<string | null>(null)
   const dragOffset = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 })
+  const dragStart = useRef<{ x: number; y: number } | null>(null)
+  const hasDragged = useRef<boolean>(false)
   const svgRef = useRef<SVGSVGElement | null>(null)
+
+  // Edge drawing state
+  const [edgeDragFrom, setEdgeDragFrom] = useState<string | null>(null)
+  const [edgeDragPos, setEdgeDragPos] = useState<{ x: number; y: number } | null>(null)
+
+  // Lasso selection state
+  const [lassoStart, setLassoStart] = useState<{ x: number; y: number } | null>(null)
+  const [lassoEnd, setLassoEnd] = useState<{ x: number; y: number } | null>(null)
 
   // Initialize positions when nodes change (keep old positions if present)
   useEffect(() => {
@@ -134,12 +144,22 @@ export default function GraphCanvas({
     const p = ptFromEvent(e)
     const cur = pos[id] || { x: 0, y: 0 }
 
-    // edge creation mode
+    // edge creation mode - support both click and drag
     if (edgeMode) {
+      // Check if shift key is held for drag-to-connect
+      if (e.shiftKey) {
+        setEdgeDragFrom(id)
+        setEdgeDragPos(cur)
+        return
+      }
+
+      // Otherwise use click mode
       if (pendingFrom === null) {
         setPendingFrom(id)
       } else if (pendingFrom !== id) {
-        onCreateEdge && onCreateEdge(pendingFrom, id)
+        if (onCreateEdge) {
+          onCreateEdge(pendingFrom, id)
+        }
         setPendingFrom(null)
       }
       return
@@ -147,20 +167,82 @@ export default function GraphCanvas({
 
     dragId.current = id
     dragOffset.current = { dx: p.x - cur.x, dy: p.y - cur.y }
+    dragStart.current = p
+    hasDragged.current = false
   }
 
   const onSvgMouseMove = (e: React.MouseEvent) => {
+    const p = ptFromEvent(e)
+
+    // Handle lasso selection
+    if (lassoStart) {
+      setLassoEnd(p)
+      return
+    }
+
+    // Handle edge drag drawing
+    if (edgeDragFrom) {
+      setEdgeDragPos(p)
+      return
+    }
+
+    // Handle node drag
     if (!dragId.current) return
     const id = dragId.current
-    const p = ptFromEvent(e)
     const { dx, dy } = dragOffset.current
+
+    // Only consider it a drag if moved more than 5 pixels
+    if (dragStart.current) {
+      const distance = Math.sqrt(
+        Math.pow(p.x - dragStart.current.x, 2) + Math.pow(p.y - dragStart.current.y, 2)
+      )
+      if (distance > 5) {
+        hasDragged.current = true
+      }
+    }
+
     setPos((prev) => ({
       ...prev,
       [id!]: { x: p.x - dx, y: p.y - dy }
     }))
   }
 
-  const onSvgMouseUp = (_e: React.MouseEvent) => {
+  const onSvgMouseDown = (e: React.MouseEvent) => {
+    // Only start lasso if clicking on background (not edge mode)
+    if (!edgeMode && e.target === e.currentTarget) {
+      const p = ptFromEvent(e)
+      setLassoStart(p)
+      setLassoEnd(p)
+    }
+  }
+
+  const onSvgMouseUp = () => {
+    // Complete lasso selection
+    if (lassoStart && lassoEnd && onToggleSelect) {
+      const minX = Math.min(lassoStart.x, lassoEnd.x)
+      const maxX = Math.max(lassoStart.x, lassoEnd.x)
+      const minY = Math.min(lassoStart.y, lassoEnd.y)
+      const maxY = Math.max(lassoStart.y, lassoEnd.y)
+
+      // Select all nodes within the lasso bounds
+      renderedNodes.forEach((n) => {
+        if (n.x >= minX && n.x <= maxX && n.y >= minY && n.y <= maxY) {
+          onToggleSelect(n.id)
+        }
+      })
+
+      setLassoStart(null)
+      setLassoEnd(null)
+      return
+    }
+
+    // Complete edge drag if active
+    if (edgeDragFrom) {
+      setEdgeDragFrom(null)
+      setEdgeDragPos(null)
+      return
+    }
+
     if (dragId.current) {
       const id = dragId.current
       dragId.current = null
@@ -168,9 +250,36 @@ export default function GraphCanvas({
     }
   }
 
-  const onSvgClick = (_e: React.MouseEvent) => {
-    // Clicking background cancels edge-mode selection
+  const onNodeMouseUp = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+
+    // If we're dragging an edge, complete the connection
+    if (edgeDragFrom && edgeDragFrom !== id) {
+      if (onCreateEdge) {
+        onCreateEdge(edgeDragFrom, id)
+      }
+      setEdgeDragFrom(null)
+      setEdgeDragPos(null)
+      return
+    }
+
+    // If we were dragging a node, commit the position and clear drag state
+    if (dragId.current) {
+      const draggedId = dragId.current
+      dragId.current = null
+      if (hasDragged.current) {
+        commitPositions([draggedId])
+      }
+    }
+  }
+
+  const onSvgClick = () => {
+    // Clicking background cancels edge-mode selection or edge drag
     if (edgeMode && pendingFrom) setPendingFrom(null)
+    if (edgeDragFrom) {
+      setEdgeDragFrom(null)
+      setEdgeDragPos(null)
+    }
   }
 
   // Derived arrays for rendering
@@ -219,10 +328,14 @@ export default function GraphCanvas({
         ref={svgRef}
         width="100%"
         height="100%"
+        onMouseDown={onSvgMouseDown}
         onMouseMove={onSvgMouseMove}
         onMouseUp={onSvgMouseUp}
         onClick={onSvgClick}
-        style={{ userSelect: 'none', cursor: dragId.current ? 'grabbing' : 'default' }}
+        style={{
+          userSelect: 'none',
+          cursor: dragId.current ? 'grabbing' : lassoStart ? 'crosshair' : 'default'
+        }}
       >
         {/* defs for arrowheads */}
         <defs>
@@ -274,6 +387,46 @@ export default function GraphCanvas({
           )
         })}
 
+        {/* temporary edge during drag */}
+        {edgeDragFrom && edgeDragPos && (() => {
+          const fromNode = renderedNodes.find((n) => n.id === edgeDragFrom)
+          if (!fromNode) return null
+          return (
+            <line
+              x1={fromNode.x}
+              y1={fromNode.y}
+              x2={edgeDragPos.x}
+              y2={edgeDragPos.y}
+              stroke="#1890ff"
+              strokeWidth={2}
+              strokeDasharray="5,5"
+              opacity={0.6}
+              style={{ pointerEvents: 'none' }}
+            />
+          )
+        })()}
+
+        {/* lasso selection rectangle */}
+        {lassoStart && lassoEnd && (() => {
+          const x = Math.min(lassoStart.x, lassoEnd.x)
+          const y = Math.min(lassoStart.y, lassoEnd.y)
+          const width = Math.abs(lassoEnd.x - lassoStart.x)
+          const height = Math.abs(lassoEnd.y - lassoStart.y)
+          return (
+            <rect
+              x={x}
+              y={y}
+              width={width}
+              height={height}
+              fill="rgba(24, 144, 255, 0.1)"
+              stroke="#1890ff"
+              strokeWidth={1}
+              strokeDasharray="4,4"
+              style={{ pointerEvents: 'none' }}
+            />
+          )
+        })()}
+
         {/* nodes */}
         {renderedNodes.map((n) => {
           const sel = !!selectedIds[n.id]
@@ -286,11 +439,16 @@ export default function GraphCanvas({
             <g
               key={n.id}
               onMouseDown={(e) => onNodeMouseDown(e, n.id)}
+              onMouseUp={(e) => onNodeMouseUp(e, n.id)}
               onClick={(e) => {
                 e.stopPropagation()
-                if (!edgeMode && onToggleSelect) onToggleSelect(n.id)
+                // Only toggle selection on click, not after drag or edge operations
+                // Allow deselection even in edge mode if not creating an edge
+                if (onToggleSelect && !hasDragged.current && !edgeDragFrom && !pendingFrom) {
+                  onToggleSelect(n.id)
+                }
               }}
-              style={{ cursor: edgeMode ? 'crosshair' : 'grab' }}
+              style={{ cursor: edgeMode ? 'crosshair' : (sel ? 'pointer' : 'grab') }}
             >
               <circle
                 cx={n.x}

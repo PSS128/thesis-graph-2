@@ -30,4 +30,4 @@ async def upload(file: UploadFile = File(...), title: str = Form(None)):
         raise HTTPException(status_code=400, detail="No text extracted from file.")
 
     res = add_document(doc_title=title, source=name, text=text)
-    return {"ok": True, **res}
+    return {"ok": True, "doc_id": res.get("doc_id"), **res}
