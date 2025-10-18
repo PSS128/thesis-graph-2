@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import GraphCanvas from './components/GraphCanvas'
 import EdgeRationaleCard from './components/EdgeRationaleCard'
+import CitationPanel from './components/CitationPanel'
+import NodeExtractCard from './components/NodeExtractCard'
+import NodeContextMenu from './components/NodeContextMenu'
+import MissingPiecesModal from './components/MissingPiecesModal'
+import GraphCritiquePanel from './components/GraphCritiquePanel'
 
 // ---------- Types ----------
 type CitationRef = {
@@ -152,6 +157,56 @@ export default function Home() {
     prior_evidence_types: string[]
   } | null>(null)
   const [fetchingRationale, setFetchingRationale] = useState(false)
+
+  // citation panel state
+  type EvidenceItem = {
+    title?: string
+    url?: string
+    quote: string
+    supports: 'supports' | 'contradicts'
+    strength: number
+  }
+  const [showCitationPanel, setShowCitationPanel] = useState(false)
+  const [currentEvidence, setCurrentEvidence] = useState<EvidenceItem[]>([])
+  const [fetchingEvidence, setFetchingEvidence] = useState(false)
+  const [currentEdgeIndex, setCurrentEdgeIndex] = useState<number | null>(null)
+
+  // Phase 4: text highlight → node extraction
+  const [highlightedText, setHighlightedText] = useState('')
+  const [showNodeExtractCard, setShowNodeExtractCard] = useState(false)
+  const [nodeExtraction, setNodeExtraction] = useState<{
+    name: string
+    definition: string
+    synonyms: string[]
+    measurement_ideas: string[]
+    merge_hint?: { existing_name: string; similarity: number; action: string }
+  } | null>(null)
+  const [fetchingExtraction, setFetchingExtraction] = useState(false)
+
+  // Phase 4: node context menu
+  const [contextMenu, setContextMenu] = useState<{
+    nodeId: string
+    nodeName: string
+    x: number
+    y: number
+  } | null>(null)
+
+  // Phase 4: missing pieces modal
+  const [showMissingPieces, setShowMissingPieces] = useState(false)
+  const [missingPieces, setMissingPieces] = useState<{
+    mediators: string[]
+    moderators: string[]
+    study_designs: string[]
+  } | null>(null)
+  const [fetchingMissingPieces, setFetchingMissingPieces] = useState(false)
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
+
+  // Phase 4: graph critique
+  const [showCritique, setShowCritique] = useState(false)
+  const [critiqueWarnings, setCritiqueWarnings] = useState<
+    { node_or_edge_id: string; label: string; fix_suggestion: string }[]
+  >([])
+  const [fetchingCritique, setFetchingCritique] = useState(false)
 
   // ---------------- Effects ----------------
   useEffect(() => {
@@ -640,23 +695,62 @@ export default function Home() {
     }
   }
 
-  function acceptEdge() {
+  async function acceptEdge() {
     if (!pendingEdge) return
-    setEdges((prev) => [
-      ...prev,
-      {
-        from_id: pendingEdge.from_id,
-        to_id: pendingEdge.to_id,
-        type: pendingEdge.type as any,
-        status: 'ACCEPTED',
-        relation: newEdgeRelation,
-        mechanisms: edgeRationale?.mechanisms || [],
-        assumptions: edgeRationale?.assumptions || [],
-        confounders: edgeRationale?.likely_confounders || []
-      }
-    ])
+
+    const newEdge: EdgeT = {
+      from_id: pendingEdge.from_id,
+      to_id: pendingEdge.to_id,
+      type: pendingEdge.type as 'CAUSES' | 'MODERATES' | 'MEDIATES' | 'CONTRADICTS',
+      status: 'ACCEPTED' as 'ACCEPTED',
+      relation: newEdgeRelation,
+      mechanisms: edgeRationale?.mechanisms || [],
+      assumptions: edgeRationale?.assumptions || [],
+      confounders: edgeRationale?.likely_confounders || []
+    }
+
+    setEdges((prev) => [...prev, newEdge])
+    const newEdgeIndex = edges.length
+
+    // Close rationale modal
     setPendingEdge(null)
     setEdgeRationale(null)
+
+    // Fetch evidence for this edge
+    await fetchEvidence(newEdgeIndex, newEdge)
+  }
+
+  async function fetchEvidence(edgeIndex: number, edge: EdgeT) {
+    const fromNode = nodes.find((n) => n.id === edge.from_id)
+    const toNode = nodes.find((n) => n.id === edge.to_id)
+    if (!fromNode || !toNode) return
+
+    setCurrentEdgeIndex(edgeIndex)
+    setShowCitationPanel(true)
+    setFetchingEvidence(true)
+    setCurrentEvidence([])
+
+    try {
+      const r = await fetch(`${API}/edge/evidence`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          a_name: getNodeText(fromNode),
+          b_name: getNodeText(toNode),
+          mechanisms: edge.mechanisms || [],
+          top_k: 3
+        })
+      })
+
+      if (!r.ok) throw new Error(await r.text())
+      const data: EvidenceItem[] = await r.json()
+      setCurrentEvidence(data)
+    } catch (e: any) {
+      console.error('Failed to fetch evidence:', e)
+      setCurrentEvidence([])
+    } finally {
+      setFetchingEvidence(false)
+    }
   }
 
   function rejectEdge() {
@@ -667,6 +761,227 @@ export default function Home() {
   function cancelEdgeModal() {
     setPendingEdge(null)
     setEdgeRationale(null)
+  }
+
+  function pinCitation(item: EvidenceItem) {
+    if (currentEdgeIndex === null) return
+
+    // Add citation to the edge
+    setEdges((prev) =>
+      prev.map((e, i) => {
+        if (i !== currentEdgeIndex) return e
+        const newCitation = {
+          doc: item.title || item.url || 'Unknown',
+          span: [0, 0] as [number, number],
+          support: item.supports,
+          strength: item.strength
+        }
+        return {
+          ...e,
+          citations: [...(e.citations || []), newCitation]
+        }
+      })
+    )
+
+    alert(`Citation pinned to edge #${currentEdgeIndex + 1}`)
+  }
+
+  function closeCitationPanel() {
+    setShowCitationPanel(false)
+    setCurrentEvidence([])
+    setCurrentEdgeIndex(null)
+  }
+
+  // ---------------- Phase 4: Text → Node Extraction ----------------
+  async function extractNodeFromText(text: string) {
+    setHighlightedText(text)
+    setShowNodeExtractCard(true)
+    setFetchingExtraction(true)
+    setNodeExtraction(null)
+
+    try {
+      const existingNames = nodes.map((n) => getNodeText(n))
+      const r = await fetch(`${API}/node/extract`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          existing_names: existingNames
+        })
+      })
+
+      if (!r.ok) throw new Error(await r.text())
+      const data = await r.json()
+      setNodeExtraction(data)
+    } catch (e: any) {
+      console.error('Failed to extract node:', e)
+      alert(`Node extraction failed:\n${e.message || e}`)
+      setShowNodeExtractCard(false)
+    } finally {
+      setFetchingExtraction(false)
+    }
+  }
+
+  function acceptExtractedNode() {
+    if (!nodeExtraction) return
+
+    const id = `N${Math.random().toString(36).slice(2, 7)}`
+    const newNode: NodeT = {
+      id,
+      name: nodeExtraction.name,
+      kind: 'VARIABLE',
+      definition: nodeExtraction.definition,
+      synonyms: nodeExtraction.synonyms,
+      measurement_ideas: nodeExtraction.measurement_ideas
+    }
+
+    setNodes((prev) => [...prev, newNode])
+    setSelected((prev) => ({ ...prev, [id]: true }))
+    setShowNodeExtractCard(false)
+    setNodeExtraction(null)
+  }
+
+  function mergeExtractedNode() {
+    if (!nodeExtraction?.merge_hint) return
+
+    // Find the existing node and update it
+    const existingName = nodeExtraction.merge_hint.existing_name
+    const existingNode = nodes.find((n) => getNodeText(n) === existingName)
+
+    if (existingNode) {
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === existingNode.id
+            ? {
+                ...n,
+                definition: nodeExtraction.definition,
+                synonyms: [...new Set([...(n.synonyms || []), ...nodeExtraction.synonyms])]
+              }
+            : n
+        )
+      )
+      alert(`Merged with existing node: ${existingName}`)
+    }
+
+    setShowNodeExtractCard(false)
+    setNodeExtraction(null)
+  }
+
+  function rejectExtractedNode() {
+    setShowNodeExtractCard(false)
+    setNodeExtraction(null)
+  }
+
+  // ---------------- Phase 4: Missing Pieces ----------------
+  async function findMissingPieces(nodeId: string) {
+    setFocusNodeId(nodeId)
+    setShowMissingPieces(true)
+    setFetchingMissingPieces(true)
+    setMissingPieces(null)
+
+    try {
+      const graphNodes = nodes.map((n) => ({
+        id: n.id,
+        name: getNodeText(n),
+        kind: getNodeKind(n) as 'THESIS' | 'VARIABLE' | 'ASSUMPTION'
+      }))
+
+      const graphEdges = edges.map((e, i) => ({
+        id: `E${i}`,
+        from_id: e.from_id,
+        to_id: e.to_id,
+        type: getEdgeType(e) as 'CAUSES' | 'MODERATES' | 'MEDIATES' | 'CONTRADICTS',
+        status: getEdgeStatus(e) as 'PROPOSED' | 'ACCEPTED' | 'REJECTED'
+      }))
+
+      const r = await fetch(`${API}/graph/suggest_mediators`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          focus_node_id: nodeId,
+          nodes: graphNodes,
+          edges: graphEdges
+        })
+      })
+
+      if (!r.ok) throw new Error(await r.text())
+      const data = await r.json()
+      setMissingPieces(data)
+    } catch (e: any) {
+      console.error('Failed to fetch missing pieces:', e)
+      setMissingPieces({ mediators: [], moderators: [], study_designs: [] })
+    } finally {
+      setFetchingMissingPieces(false)
+    }
+  }
+
+  function acceptMediator(mediator: string) {
+    const id = `N${Math.random().toString(36).slice(2, 7)}`
+    const newNode: NodeT = {
+      id,
+      name: mediator,
+      kind: 'VARIABLE',
+      definition: `Mediator variable: ${mediator}`
+    }
+
+    setNodes((prev) => [...prev, newNode])
+    setSelected((prev) => ({ ...prev, [id]: true }))
+    alert(`Added mediator: ${mediator}`)
+  }
+
+  function acceptModerator(moderator: string) {
+    const id = `N${Math.random().toString(36).slice(2, 7)}`
+    const newNode: NodeT = {
+      id,
+      name: moderator,
+      kind: 'VARIABLE',
+      definition: `Moderator variable: ${moderator}`
+    }
+
+    setNodes((prev) => [...prev, newNode])
+    setSelected((prev) => ({ ...prev, [id]: true }))
+    alert(`Added moderator: ${moderator}`)
+  }
+
+  // ---------------- Phase 4: Graph Critique ----------------
+  async function critiqueGraph() {
+    setShowCritique(true)
+    setFetchingCritique(true)
+    setCritiqueWarnings([])
+
+    try {
+      const graphNodes = nodes.map((n) => ({
+        id: n.id,
+        name: getNodeText(n),
+        kind: getNodeKind(n) as 'THESIS' | 'VARIABLE' | 'ASSUMPTION'
+      }))
+
+      const graphEdges = edges.map((e, i) => ({
+        id: `E${i}`,
+        from_id: e.from_id,
+        to_id: e.to_id,
+        type: getEdgeType(e) as 'CAUSES' | 'MODERATES' | 'MEDIATES' | 'CONTRADICTS',
+        status: getEdgeStatus(e) as 'PROPOSED' | 'ACCEPTED' | 'REJECTED'
+      }))
+
+      const r = await fetch(`${API}/graph/critique`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodes: graphNodes,
+          edges: graphEdges
+        })
+      })
+
+      if (!r.ok) throw new Error(await r.text())
+      const data = await r.json()
+      setCritiqueWarnings(data.warnings || [])
+    } catch (e: any) {
+      console.error('Failed to critique graph:', e)
+      setCritiqueWarnings([])
+    } finally {
+      setFetchingCritique(false)
+    }
   }
 
   // --- UI helpers ---
@@ -905,6 +1220,64 @@ export default function Home() {
             <option value="CONTRADICTS">CONTRADICTS</option>
           </select>
         </label>
+
+        <button
+          onClick={critiqueGraph}
+          disabled={nodes.length === 0}
+          style={{
+            padding: '6px 10px',
+            border: '1px solid #ff4d4f',
+            borderRadius: 6,
+            marginLeft: 'auto',
+            background: showCritique ? '#fff1f0' : '#fff',
+            color: '#ff4d4f'
+          }}
+          title="Run DAG validation and check for issues"
+        >
+          {showCritique ? 'Hide Critique' : 'Critique Graph'}
+        </button>
+      </div>
+
+      {/* Phase 4: Text Highlight → Make Node */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          alignItems: 'center',
+          padding: 8,
+          border: '1px dashed #ddd',
+          borderRadius: 8,
+          background: '#f0f5ff'
+        }}
+      >
+        <strong style={{ fontSize: 13 }}>Extract Node from Text:</strong>
+        <input
+          placeholder="Paste highlighted text here..."
+          value={highlightedText}
+          onChange={(e) => setHighlightedText(e.target.value)}
+          style={{
+            flex: 1,
+            padding: '6px 10px',
+            border: '1px solid #adc6ff',
+            borderRadius: 6,
+            fontSize: 12
+          }}
+        />
+        <button
+          onClick={() => highlightedText.trim() && extractNodeFromText(highlightedText.trim())}
+          disabled={!highlightedText.trim()}
+          style={{
+            padding: '6px 12px',
+            border: 'none',
+            background: highlightedText.trim() ? '#1890ff' : '#d9d9d9',
+            color: '#fff',
+            borderRadius: 6,
+            cursor: highlightedText.trim() ? 'pointer' : 'not-allowed',
+            fontWeight: 600
+          }}
+        >
+          Make Node
+        </button>
       </div>
 
       {/* Graph */}
@@ -1000,6 +1373,20 @@ export default function Home() {
                   >
                     Delete
                   </button>
+                  <button
+                    onClick={(e) => {
+                      setContextMenu({
+                        nodeId: n.id,
+                        nodeName: getNodeText(n),
+                        x: e.clientX,
+                        y: e.clientY
+                      })
+                    }}
+                    style={{ padding: '2px 8px', border: '1px solid #1890ff', color: '#1890ff', borderRadius: 6 }}
+                    title="More actions"
+                  >
+                    •••
+                  </button>
                 </div>
 
                 {/* inline rename */}
@@ -1057,6 +1444,13 @@ export default function Home() {
                   {e.confidence != null ? (
                     <span style={{ color: '#999' }}>conf: {e.confidence.toFixed(2)}</span>
                   ) : null}
+                  <button
+                    onClick={() => fetchEvidence(i, e)}
+                    style={{ padding: '2px 8px', border: '1px solid #1890ff', color: '#1890ff', borderRadius: 6 }}
+                    title="View evidence for this edge"
+                  >
+                    View Evidence
+                  </button>
                   <button
                     onClick={() => deleteEdge(i)}
                     style={{ marginLeft: 'auto', padding: '2px 8px', border: '1px solid #c00', color: '#c00', borderRadius: 6 }}
@@ -1187,6 +1581,94 @@ export default function Home() {
             onClose={cancelEdgeModal}
           />
         </>
+      )}
+
+      {/* Citation Panel */}
+      {showCitationPanel && (
+        <CitationPanel
+          evidence={currentEvidence}
+          loading={fetchingEvidence}
+          onPin={pinCitation}
+          onClose={closeCitationPanel}
+        />
+      )}
+
+      {/* Phase 4: Node Extraction Modal */}
+      {showNodeExtractCard && (
+        <>
+          {/* Backdrop */}
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.5)',
+              zIndex: 999
+            }}
+            onClick={() => setShowNodeExtractCard(false)}
+          />
+          {/* Modal */}
+          <NodeExtractCard
+            extraction={nodeExtraction}
+            loading={fetchingExtraction}
+            onAccept={acceptExtractedNode}
+            onMerge={mergeExtractedNode}
+            onReject={rejectExtractedNode}
+            onClose={() => setShowNodeExtractCard(false)}
+          />
+        </>
+      )}
+
+      {/* Phase 4: Node Context Menu */}
+      {contextMenu && (
+        <NodeContextMenu
+          nodeId={contextMenu.nodeId}
+          nodeName={contextMenu.nodeName}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onFindMissingPieces={() => findMissingPieces(contextMenu.nodeId)}
+          onDelete={() => deleteNode(contextMenu.nodeId)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {/* Phase 4: Missing Pieces Modal */}
+      {showMissingPieces && (
+        <>
+          {/* Backdrop */}
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.5)',
+              zIndex: 999
+            }}
+            onClick={() => setShowMissingPieces(false)}
+          />
+          {/* Modal */}
+          <MissingPiecesModal
+            nodeName={focusNodeId ? getNodeText(nodes.find((n) => n.id === focusNodeId) || { id: '' }) : ''}
+            suggestions={missingPieces}
+            loading={fetchingMissingPieces}
+            onAcceptMediator={acceptMediator}
+            onAcceptModerator={acceptModerator}
+            onClose={() => setShowMissingPieces(false)}
+          />
+        </>
+      )}
+
+      {/* Phase 4: Graph Critique Panel */}
+      {showCritique && (
+        <GraphCritiquePanel
+          warnings={critiqueWarnings}
+          loading={fetchingCritique}
+          onClose={() => setShowCritique(false)}
+        />
       )}
     </main>
   )

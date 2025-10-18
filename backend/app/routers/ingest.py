@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from ..services.embeddings import add_document
 import pdfplumber
+import io
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -14,14 +15,16 @@ async def upload(file: UploadFile = File(...), title: str = Form(None)):
     data = await file.read()
     text = ""
     try:
-      if name.lower().endswith(".pdf") or "pdf" in content_type:
-          with pdfplumber.open(bytes(data)) as pdf:
-              parts = [page.extract_text() or "" for page in pdf.pages]
-              text = "\n".join(parts)
-      else:
-          text = data.decode("utf-8", errors="ignore")
+        if name.lower().endswith(".pdf") or "pdf" in content_type:
+            # Wrap bytes in BytesIO to provide seek() method
+            pdf_file = io.BytesIO(data)
+            with pdfplumber.open(pdf_file) as pdf:
+                parts = [page.extract_text() or "" for page in pdf.pages]
+                text = "\n".join(parts)
+        else:
+            text = data.decode("utf-8", errors="ignore")
     except Exception as e:
-      raise HTTPException(status_code=400, detail=f"Failed to read file: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to read file: {e}")
 
     if not text.strip():
         raise HTTPException(status_code=400, detail="No text extracted from file.")
