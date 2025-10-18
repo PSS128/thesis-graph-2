@@ -12,6 +12,57 @@ type Props = {
   onClose: () => void
 }
 
+// Get layman-friendly explanation for each warning type
+function getWarningContext(label: string): { emoji: string; explanation: string } {
+  const lower = label.toLowerCase()
+
+  if (lower.includes('confounding') || lower.includes('confounder')) {
+    return {
+      emoji: '🔀',
+      explanation:
+        'There might be a hidden factor affecting both variables. Without accounting for it, you can\'t be sure the connection is real.'
+    }
+  }
+
+  if (lower.includes('collider')) {
+    return {
+      emoji: '⚠️',
+      explanation:
+        'This variable is caused by multiple factors. Controlling for it in your analysis will create false correlations between unrelated things.'
+    }
+  }
+
+  if (lower.includes('mediator')) {
+    return {
+      emoji: '🚫',
+      explanation:
+        'This variable sits on the causal path. If you control for it, you\'ll block the effect and underestimate the true relationship.'
+    }
+  }
+
+  if (lower.includes('no evidence') || lower.includes('evidence')) {
+    return {
+      emoji: '📚',
+      explanation:
+        'You\'ve drawn this connection but haven\'t provided any studies or data to support it. Add citations to strengthen your argument.'
+    }
+  }
+
+  if (lower.includes('cycle')) {
+    return {
+      emoji: '🔄',
+      explanation:
+        'Your graph has circular causality (A causes B causes A). This violates causal graph assumptions. Consider time-ordering your variables.'
+    }
+  }
+
+  // Default
+  return {
+    emoji: '⚠️',
+    explanation: 'This issue may affect the validity of your causal conclusions.'
+  }
+}
+
 export default function GraphCritiquePanel({ warnings, loading, onClose }: Props) {
   return (
     <div
@@ -88,44 +139,63 @@ export default function GraphCritiquePanel({ warnings, loading, onClose }: Props
 
         {!loading && warnings.length > 0 && (
           <div style={{ display: 'grid', gap: 12 }}>
-            {warnings.map((warning, idx) => (
-              <div
-                key={idx}
-                style={{
-                  padding: 14,
-                  border: '1px solid #ffccc7',
-                  borderLeft: '4px solid #ff4d4f',
-                  borderRadius: 8,
-                  background: '#fff2f0'
-                }}
-              >
-                {/* Warning header */}
-                <div style={{ marginBottom: 8 }}>
-                  <span
+            {warnings.map((warning, idx) => {
+              const context = getWarningContext(warning.label)
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    padding: 14,
+                    border: '1px solid #ffccc7',
+                    borderLeft: '4px solid #ff4d4f',
+                    borderRadius: 8,
+                    background: '#fff2f0'
+                  }}
+                >
+                  {/* Warning header */}
+                  <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 18 }}>{context.emoji}</span>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        background: '#ffa39e',
+                        color: '#820014'
+                      }}
+                    >
+                      {warning.node_or_edge_id}
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#cf1322' }}>
+                      {warning.label}
+                    </span>
+                  </div>
+
+                  {/* Plain English explanation */}
+                  <div
                     style={{
-                      display: 'inline-block',
-                      padding: '2px 8px',
-                      borderRadius: 4,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      background: '#ffa39e',
-                      color: '#820014',
-                      marginRight: 8
+                      fontSize: 13,
+                      color: '#595959',
+                      lineHeight: 1.5,
+                      marginBottom: 10,
+                      padding: 10,
+                      background: '#fff',
+                      borderRadius: 6,
+                      border: '1px solid #ffe7ba'
                     }}
                   >
-                    {warning.node_or_edge_id}
-                  </span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#cf1322' }}>
-                    {warning.label}
-                  </span>
-                </div>
+                    <strong style={{ color: '#d46b08' }}>What this means:</strong> {context.explanation}
+                  </div>
 
-                {/* Fix suggestion */}
-                <div style={{ fontSize: 13, color: '#595959', lineHeight: 1.5 }}>
-                  <strong style={{ color: '#262626' }}>Fix:</strong> {warning.fix_suggestion}
+                  {/* Fix suggestion */}
+                  <div style={{ fontSize: 13, color: '#595959', lineHeight: 1.5 }}>
+                    <strong style={{ color: '#262626' }}>How to fix:</strong> {warning.fix_suggestion}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

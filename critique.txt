@@ -1,0 +1,16 @@
+Console Error
+
+
+{"detail":[{"type":"literal_error","loc":["body","nodes",0,"kind"],"msg":"Input should be 'THESIS', 'VARIABLE' or 'ASSUMPTION'","input":"CLAIM","ctx":{"expected":"'THESIS', 'VARIABLE' or 'ASSUMPTION'"}},{"type":"literal_error","loc":["body","nodes",1,"kind"],"msg":"Input should be 'THESIS', 'VARIABLE' or 'ASSUMPTION'","input":"CLAIM","ctx":{"expected":"'THESIS', 'VARIABLE' or 'ASSUMPTION'"}},{"type":"literal_error","loc":["body","nodes",2,"kind"],"msg":"Input should be 'THESIS', 'VARIABLE' or 'ASSUMPTION'","input":"CLAIM","ctx":{"expected":"'THESIS', 'VARIABLE' or 'ASSUMPTION'"}},{"type":"literal_error","loc":["body","nodes",3,"kind"],"msg":"Input should be 'THESIS', 'VARIABLE' or 'ASSUMPTION'","input":"CLAIM","ctx":{"expected":"'THESIS', 'VARIABLE' or 'ASSUMPTION'"}},{"type":"literal_error","loc":["body","nodes",4,"kind"],"msg":"Input should be 'THESIS', 'VARIABLE' or 'ASSUMPTION'","input":"CLAIM","ctx":{"expected":"'THESIS', 'VARIABLE' or 'ASSUMPTION'"}},{"type":"literal_error","loc":["body","edges",0,"type"],"msg":"Input should be 'CAUSES', 'MODERATES', 'MEDIATES' or 'CONTRADICTS'","input":"SUPPORTS","ctx":{"expected":"'CAUSES', 'MODERATES', 'MEDIATES' or 'CONTRADICTS'"}},{"type":"literal_error","loc":["body","edges",2,"type"],"msg":"Input should be 'CAUSES', 'MODERATES', 'MEDIATES' or 'CONTRADICTS'","input":"SUPPORTS","ctx":{"expected":"'CAUSES', 'MODERATES', 'MEDIATES' or 'CONTRADICTS'"}},{"type":"literal_error","loc":["body","edges",3,"type"],"msg":"Input should be 'CAUSES', 'MODERATES', 'MEDIATES' or 'CONTRADICTS'","input":"SUPPORTS","ctx":{"expected":"'CAUSES', 'MODERATES', 'MEDIATES' or 'CONTRADICTS'"}},{"type":"literal_error","loc":["body","edges",4,"type"],"msg":"Input should be 'CAUSES', 'MODERATES', 'MEDIATES' or 'CONTRADICTS'","input":"SUPPORTS","ctx":{"expected":"'CAUSES', 'MODERATES', 'MEDIATES' or 'CONTRADICTS'"}}]}
+
+Show More
+src\app\page.tsx (1014:24) @ critiqueGraph
+
+
+  1012 |       })
+  1013 |
+> 1014 |       if (!r.ok) throw new Error(await r.text())
+       |                        ^
+  1015 |       const data = await r.json()
+  1016 |       setCritiqueWarnings(data.warnings || [])
+  1017 |     } catch (e: any) {

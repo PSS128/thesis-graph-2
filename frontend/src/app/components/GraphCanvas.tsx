@@ -27,6 +27,12 @@ type EdgeT = {
   confidence?: number
 }
 
+type Warning = {
+  node_or_edge_id: string
+  label: string
+  fix_suggestion: string
+}
+
 type Props = {
   /** Nodes to render */
   nodes: NodeT[]
@@ -48,6 +54,9 @@ type Props = {
   /** Toggle selection state of a node */
   onToggleSelect?: (id: string) => void
 
+  /** Critique warnings to display inline */
+  warnings?: Warning[]
+
   /** Optional width/height; otherwise fills parent */
   width?: number | string
   height?: number | string
@@ -65,6 +74,7 @@ export default function GraphCanvas({
   onCreateEdge,
   selectedIds = {},
   onToggleSelect,
+  warnings = [],
   width = '100%',
   height = 520
 }: Props) {
@@ -304,6 +314,40 @@ export default function GraphCanvas({
   }
   const getEdgeStatus = (e: EdgeT): string => e.status || 'ACCEPTED'
 
+  // Warning helpers
+  const getWarningEmoji = (label: string): string => {
+    const lower = label.toLowerCase()
+    if (lower.includes('confound')) return '🔀'
+    if (lower.includes('collider')) return '⚠️'
+    if (lower.includes('mediator')) return '🚫'
+    if (lower.includes('evidence')) return '📚'
+    if (lower.includes('cycle')) return '🔄'
+    return '⚠️'
+  }
+
+  // Create maps for quick warning lookup
+  const nodeWarnings = useMemo(() => {
+    const map: Record<string, Warning[]> = {}
+    warnings.forEach((w) => {
+      if (w.node_or_edge_id.startsWith('n') || w.node_or_edge_id.startsWith('N')) {
+        if (!map[w.node_or_edge_id]) map[w.node_or_edge_id] = []
+        map[w.node_or_edge_id].push(w)
+      }
+    })
+    return map
+  }, [warnings])
+
+  const edgeWarnings = useMemo(() => {
+    const map: Record<string, Warning[]> = {}
+    warnings.forEach((w) => {
+      if (w.node_or_edge_id.startsWith('E') || w.node_or_edge_id.startsWith('e')) {
+        if (!map[w.node_or_edge_id]) map[w.node_or_edge_id] = []
+        map[w.node_or_edge_id].push(w)
+      }
+    })
+    return map
+  }, [warnings])
+
   // Render helpers
   const NODE_R = 22
   const colorForType = (t: string) => (t === 'THESIS' ? '#164' : '#345')
@@ -359,6 +403,11 @@ export default function GraphCanvas({
           // Proposed edges are dashed, accepted are solid
           const dashArray = status === 'PROPOSED' ? '5,5' : '0'
           const opacity = status === 'PROPOSED' ? 0.6 : 0.9
+          const edgeId = `E${idx}`
+          const hasWarnings = edgeWarnings[edgeId] || edgeWarnings[`e${idx}`]
+          const midX = (from.x + to.x) / 2
+          const midY = (from.y + to.y) / 2
+
           return (
             <g key={`E-${idx}`}>
               <line
@@ -374,8 +423,8 @@ export default function GraphCanvas({
               />
               {/* relation label at mid-point */}
               <text
-                x={(from.x + to.x) / 2}
-                y={(from.y + to.y) / 2 - 6}
+                x={midX}
+                y={midY - 6}
                 fill={stroke}
                 fontSize={11}
                 textAnchor="middle"
@@ -383,6 +432,33 @@ export default function GraphCanvas({
               >
                 {relation.toLowerCase()}
               </text>
+
+              {/* Warning badge */}
+              {hasWarnings && (
+                <g>
+                  <title>
+                    {hasWarnings.map((w) => `${w.label}: ${w.fix_suggestion}`).join('\n')}
+                  </title>
+                  <circle
+                    cx={midX}
+                    cy={midY + 12}
+                    r={10}
+                    fill="#ff4d4f"
+                    stroke="#fff"
+                    strokeWidth={2}
+                  />
+                  <text
+                    x={midX}
+                    y={midY + 16}
+                    fill="#fff"
+                    fontSize={12}
+                    textAnchor="middle"
+                    style={{ pointerEvents: 'none', userSelect: 'none' }}
+                  >
+                    {getWarningEmoji(hasWarnings[0].label)}
+                  </text>
+                </g>
+              )}
             </g>
           )
         })}
@@ -434,6 +510,7 @@ export default function GraphCanvas({
           const fill = '#f6fbe9'
           const nodeType = getNodeType(n)
           const stroke = colorForType(nodeType)
+          const hasWarnings = nodeWarnings[n.id]
 
           return (
             <g
@@ -450,6 +527,12 @@ export default function GraphCanvas({
               }}
               style={{ cursor: edgeMode ? 'crosshair' : (sel ? 'pointer' : 'grab') }}
             >
+              {/* Tooltip for warnings */}
+              {hasWarnings && (
+                <title>
+                  {hasWarnings.map((w) => `${w.label}: ${w.fix_suggestion}`).join('\n')}
+                </title>
+              )}
               <circle
                 cx={n.x}
                 cy={n.y}
@@ -492,6 +575,30 @@ export default function GraphCanvas({
                   opacity={0.7}
                 />
               ) : null}
+
+              {/* Warning badge */}
+              {hasWarnings && (
+                <g>
+                  <circle
+                    cx={n.x + NODE_R - 2}
+                    cy={n.y - NODE_R + 2}
+                    r={9}
+                    fill="#ff4d4f"
+                    stroke="#fff"
+                    strokeWidth={2}
+                  />
+                  <text
+                    x={n.x + NODE_R - 2}
+                    y={n.y - NODE_R + 6}
+                    fill="#fff"
+                    fontSize={11}
+                    textAnchor="middle"
+                    style={{ pointerEvents: 'none', userSelect: 'none' }}
+                  >
+                    {getWarningEmoji(hasWarnings[0].label)}
+                  </text>
+                </g>
+              )}
             </g>
           )
         })}

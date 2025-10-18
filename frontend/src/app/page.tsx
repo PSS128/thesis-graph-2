@@ -91,11 +91,15 @@ function getNodeText(n: NodeT): string {
 }
 
 function getNodeKind(n: NodeT): string {
-  return n.kind || n.type || 'VARIABLE'
+  // Map legacy "CLAIM" to "VARIABLE"
+  const kind = n.kind || n.type || 'VARIABLE'
+  return kind === 'CLAIM' ? 'VARIABLE' : kind
 }
 
 function getEdgeType(e: EdgeT): string {
-  return e.type || e.relation || 'CAUSES'
+  // Map legacy "SUPPORTS" to "CAUSES"
+  const type = e.type || e.relation || 'CAUSES'
+  return type === 'SUPPORTS' ? 'CAUSES' : type
 }
 
 function getEdgeStatus(e: EdgeT): string {
@@ -723,7 +727,6 @@ export default function Home() {
       to_id: pendingEdge.to_id,
       type: pendingEdge.type as 'CAUSES' | 'MODERATES' | 'MEDIATES' | 'CONTRADICTS',
       status: 'ACCEPTED' as 'ACCEPTED',
-      relation: newEdgeRelation,
       mechanisms: edgeRationale?.mechanisms || [],
       assumptions: edgeRationale?.assumptions || [],
       confounders: edgeRationale?.likely_confounders || []
@@ -1404,6 +1407,7 @@ export default function Home() {
           onCreateEdge={createEdge}
           selectedIds={selected}
           onToggleSelect={toggleSelected}
+          warnings={critiqueWarnings}
         />
         {!edgeMode && nodes.length > 0 && (
           <div
