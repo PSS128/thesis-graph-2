@@ -22,7 +22,14 @@ class NodeIn(BaseModel):
 class EdgeIn(BaseModel):
     from_id: str
     to_id: str
-    relation: Literal["SUPPORTS", "CONTRADICTS"]
+    # Support both old and new field names for backward compatibility
+    type: Optional[Literal["CAUSES", "MODERATES", "MEDIATES", "CONTRADICTS"]] = None
+    relation: Optional[Literal["SUPPORTS", "CONTRADICTS"]] = None
+    # Additional fields from new schema
+    status: Optional[str] = None
+    mechanisms: Optional[List[str]] = None
+    assumptions: Optional[List[str]] = None
+    confounders: Optional[List[str]] = None
     rationale: Optional[str] = None
     confidence: Optional[float] = None
 

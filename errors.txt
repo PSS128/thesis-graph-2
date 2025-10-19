@@ -1,0 +1,48 @@
+
+
+    Errors:
+
+    Console Error
+
+
+HTTP 422 {"detail":[{"type":"missing","loc":["body","edges",11,"relation"],"msg":"Field required","input":{"from_id":"n2","to_id":"n1","type":"CAUSES","status":"ACCEPTED","mechanisms":["Reducing work hours leads to increased employee motivation","Reducing work hours allows for better work-life balance","Reducing work hours enables employees to focus on tasks without distractions"],"assumptions":["A causal relationship exists between reducing work hours and increasing productivity","Reducing work hours is the primary cause of increased productivity"],"confounders":["Employee demographics (age, experience, etc.)","Job type and requirements","Industry and work environment"]}}]}
+
+src\app\page.tsx (561:13) @ composeFromSelectionBase
+
+
+  559 |     if (!r.ok) {
+  560 |       const text = await r.text().catch(() => '')
+> 561 |       throw new Error(`HTTP ${r.status} ${text}`)
+      |             ^
+  562 |     }
+  563 |
+  564 |     const data = await r.json()
+Call Stack
+
+
+
+
+Console Error
+
+
+HTTP 422 {"detail":[{"type":"missing","loc":["body","edges",11,"relation"],"msg":"Field required","input":{"from_id":"n2","to_id":"n1","type":"CAUSES","status":"ACCEPTED","mechanisms":["Reducing work hours leads to increased employee motivation","Reducing work hours allows for better work-life balance","Reducing work hours enables employees to focus on tasks without distractions"],"assumptions":["A causal relationship exists between reducing work hours and increasing productivity","Reducing work hours is the primary cause of increased productivity"],"confounders":["Employee demographics (age, experience, etc.)","Job type and requirements","Industry and work environment"]}}]}
+
+src\app\page.tsx (561:13) @ composeFromSelectionBase
+
+
+  559 |     if (!r.ok) {
+  560 |       const text = await r.text().catch(() => '')
+> 561 |       throw new Error(`HTTP ${r.status} ${text}`)
+      |             ^
+  562 |     }
+  563 |
+  564 |     const data = await r.json()
+Call Stack
+
+
+
+
+
+
+
+error @ intercept-console-error.js:57Understand this error
