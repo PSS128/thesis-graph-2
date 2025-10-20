@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import dynamic from 'next/dynamic'
 import GraphCanvas from './components/GraphCanvas'
 import EdgeRationaleCard from './components/EdgeRationaleCard'
 import CitationPanel from './components/CitationPanel'
@@ -10,12 +9,7 @@ import NodeExtractCard from './components/NodeExtractCard'
 import NodeContextMenu from './components/NodeContextMenu'
 import MissingPiecesModal from './components/MissingPiecesModal'
 import GraphCritiquePanel from './components/GraphCritiquePanel'
-
-// Dynamically import PDFViewer to avoid SSR issues with react-pdf
-const PDFViewer = dynamic(() => import('./components/PDFViewer'), {
-  ssr: false,
-  loading: () => <div style={{ padding: 40, textAlign: 'center' }}>Loading PDF viewer...</div>
-})
+import FileUploadZone from './components/FileUploadZone'
 
 // ---------- Types ----------
 type CitationRef = {
@@ -222,10 +216,15 @@ export default function Home() {
   const [fetchingCritique, setFetchingCritique] = useState(false)
 
   // Phase 5: PDF viewer
-  const [uploadedFiles, setUploadedFiles] = useState<Array<{ name: string; file: File; docId: string }>>([])
-  const [currentPdfFile, setCurrentPdfFile] = useState<File | null>(null)
-  const [currentPdfDocId, setCurrentPdfDocId] = useState<string | null>(null)
-  const [showPdfViewer, setShowPdfViewer] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{
+    name: string
+    file: File
+    docId: string
+    uploadedAt: number
+    size: number
+    pageCount?: number
+  }>>([])
+  const [selectedPdfIndex, setSelectedPdfIndex] = useState<number>(0)
 
   // ---------------- Effects ----------------
   useEffect(() => {
@@ -326,15 +325,37 @@ export default function Home() {
       // Store file locally for PDF viewer (only for PDFs)
       if (file.name.toLowerCase().endsWith('.pdf')) {
         const docId = result.doc_id || `doc_${Date.now()}`
-        setUploadedFiles((prev) => [...prev, { name: file.name, file, docId }])
+        setUploadedFiles((prev) => [
+          ...prev,
+          {
+            name: file.name,
+            file,
+            docId,
+            uploadedAt: Date.now(),
+            size: file.size,
+            pageCount: result.page_count
+          }
+        ])
       }
 
       alert('File indexed ✅')
     } catch (e: any) {
       alert(`Upload failed:\n${e.message || e}`)
+      throw e // Re-throw for FileUploadZone to handle
     } finally {
       setBusy('idle')
     }
+  }
+
+  const deleteFile = (docId: string) => {
+    setUploadedFiles((prev) => {
+      const newFiles = prev.filter((f) => f.docId !== docId)
+      // Reset selected index if needed
+      if (selectedPdfIndex >= newFiles.length) {
+        setSelectedPdfIndex(Math.max(0, newFiles.length - 1))
+      }
+      return newFiles
+    })
   }
 
   const citeNode = async (n: NodeT) => {
@@ -1154,45 +1175,20 @@ export default function Home() {
         {projectId ? <span style={{ fontSize: 12, color: '#666' }}>Current: #{projectId}</span> : null}
       </div>
 
-      {/* Uploads */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input
-          type="file"
-          accept=".pdf,.txt"
-          onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
-          disabled={busy !== 'idle'}
+      {/* File Upload Zone */}
+      <section>
+        <h3 style={{ margin: '0 0 12px 0', fontSize: 16 }}>Document Library</h3>
+        <FileUploadZone
+          onUpload={upload}
+          uploadedFiles={uploadedFiles}
+          onDelete={deleteFile}
+          busy={busy === 'upload'}
         />
-        <span style={{ fontSize: 12, color: '#666' }}>Upload PDFs or .txt to enable citations</span>
-        {uploadedFiles.length > 0 && (
-          <>
-            <span style={{ fontSize: 12, color: '#666', marginLeft: 8 }}>|</span>
-            <span style={{ fontSize: 12, color: '#666' }}>Uploaded: {uploadedFiles.length} PDF(s)</span>
-            <button
-              onClick={() => {
-                setShowPdfViewer(!showPdfViewer)
-                if (!showPdfViewer && uploadedFiles.length > 0 && !currentPdfFile) {
-                  setCurrentPdfFile(uploadedFiles[0].file)
-                  setCurrentPdfDocId(uploadedFiles[0].docId)
-                }
-              }}
-              style={{
-                padding: '4px 10px',
-                border: '1px solid #1890ff',
-                color: '#1890ff',
-                borderRadius: 6,
-                background: showPdfViewer ? '#e6f7ff' : '#fff',
-                fontSize: 12
-              }}
-            >
-              {showPdfViewer ? 'Hide' : 'Show'} PDF Viewer
-            </button>
-          </>
-        )}
-      </div>
+      </section>
 
-      {/* PDF Viewer Section */}
-      {showPdfViewer && uploadedFiles.length > 0 && (
-        <div
+      {/* PDF Document Info Card */}
+      {uploadedFiles.length > 0 && (
+        <section
           style={{
             border: '2px solid #1890ff',
             borderRadius: 10,
@@ -1200,18 +1196,27 @@ export default function Home() {
             background: '#f0f5ff'
           }}
         >
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-            <strong>PDF Document Viewer</strong>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <strong style={{ fontSize: 14, color: '#1890ff' }}>📚 Uploaded Documents</strong>
+            <span style={{ fontSize: 12, color: '#666' }}>
+              {uploadedFiles.length} file{uploadedFiles.length > 1 ? 's' : ''} indexed
+            </span>
+          </div>
+
+          {/* File selector */}
+          {uploadedFiles.length > 1 && (
             <select
-              value={uploadedFiles.findIndex((f) => f.file === currentPdfFile)}
-              onChange={(e) => {
-                const idx = Number(e.target.value)
-                if (idx >= 0 && idx < uploadedFiles.length) {
-                  setCurrentPdfFile(uploadedFiles[idx].file)
-                  setCurrentPdfDocId(uploadedFiles[idx].docId)
-                }
+              value={selectedPdfIndex}
+              onChange={(e) => setSelectedPdfIndex(Number(e.target.value))}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #adc6ff',
+                borderRadius: 6,
+                fontSize: 13,
+                marginBottom: 12,
+                background: '#fff'
               }}
-              style={{ padding: '4px 8px', border: '1px solid #adc6ff', borderRadius: 4, fontSize: 12 }}
             >
               {uploadedFiles.map((f, i) => (
                 <option key={i} value={i}>
@@ -1219,20 +1224,114 @@ export default function Home() {
                 </option>
               ))}
             </select>
-            <span style={{ fontSize: 11, color: '#666', marginLeft: 'auto' }}>
-              💡 Select text in the PDF and click "Make Node" to extract
-            </span>
-          </div>
-          {currentPdfFile && (
-            <PDFViewer
-              file={currentPdfFile}
-              docId={currentPdfDocId || undefined}
-              onExtractNode={(text, sourceRef) => {
-                extractNodeFromText(text, sourceRef)
-              }}
-            />
           )}
-        </div>
+
+          {/* Current file details */}
+          {uploadedFiles[selectedPdfIndex] && (
+            <div
+              style={{
+                background: '#fff',
+                border: '1px solid #d9d9d9',
+                borderRadius: 8,
+                padding: 16
+              }}
+            >
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: '#262626', marginBottom: 8 }}>
+                  {uploadedFiles[selectedPdfIndex].name}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', fontSize: 12, color: '#595959' }}>
+                  <span style={{ fontWeight: 600 }}>Document ID:</span>
+                  <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{uploadedFiles[selectedPdfIndex].docId}</span>
+
+                  <span style={{ fontWeight: 600 }}>File Size:</span>
+                  <span>{(uploadedFiles[selectedPdfIndex].size / 1024 / 1024).toFixed(2)} MB</span>
+
+                  {uploadedFiles[selectedPdfIndex].pageCount && (
+                    <>
+                      <span style={{ fontWeight: 600 }}>Pages:</span>
+                      <span>{uploadedFiles[selectedPdfIndex].pageCount}</span>
+                    </>
+                  )}
+
+                  <span style={{ fontWeight: 600 }}>Uploaded:</span>
+                  <span>
+                    {new Date(uploadedFiles[selectedPdfIndex].uploadedAt).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => {
+                    const file = uploadedFiles[selectedPdfIndex].file
+                    const url = URL.createObjectURL(file)
+                    window.open(url, '_blank')
+                    setTimeout(() => URL.revokeObjectURL(url), 1000)
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '8px 16px',
+                    background: '#1890ff',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  📖 Open in New Tab
+                </button>
+                <button
+                  onClick={() => {
+                    const file = uploadedFiles[selectedPdfIndex].file
+                    const url = URL.createObjectURL(file)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = uploadedFiles[selectedPdfIndex].name
+                    a.click()
+                    URL.revokeObjectURL(url)
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '8px 16px',
+                    background: '#fff',
+                    color: '#1890ff',
+                    border: '1px solid #1890ff',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  ⬇ Download
+                </button>
+              </div>
+
+              {/* Info note */}
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  background: '#e6f7ff',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  color: '#0050b3'
+                }}
+              >
+                💡 <strong>Tip:</strong> This document has been indexed and can be cited when you use the "Cite Node" or "Add Evidence" features.
+              </div>
+            </div>
+          )}
+        </section>
       )}
 
       {/* Inputs */}

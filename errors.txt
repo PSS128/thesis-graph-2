@@ -1,48 +1,38 @@
+Errors with pdf viewer: Runtime TypeError
 
 
-    Errors:
+Object.defineProperty called on non-object
 
-    Console Error
-
-
-HTTP 422 {"detail":[{"type":"missing","loc":["body","edges",11,"relation"],"msg":"Field required","input":{"from_id":"n2","to_id":"n1","type":"CAUSES","status":"ACCEPTED","mechanisms":["Reducing work hours leads to increased employee motivation","Reducing work hours allows for better work-life balance","Reducing work hours enables employees to focus on tasks without distractions"],"assumptions":["A causal relationship exists between reducing work hours and increasing productivity","Reducing work hours is the primary cause of increased productivity"],"confounders":["Employee demographics (age, experience, etc.)","Job type and requirements","Industry and work environment"]}}]}
-
-src\app\page.tsx (561:13) @ composeFromSelectionBase
+src\app\page.tsx (1262:13) @ Home
 
 
-  559 |     if (!r.ok) {
-  560 |       const text = await r.text().catch(() => '')
-> 561 |       throw new Error(`HTTP ${r.status} ${text}`)
-      |             ^
-  562 |     }
-  563 |
-  564 |     const data = await r.json()
+  1260 |           </div>
+  1261 |           {currentPdfFile && (
+> 1262 |             <PDFViewer
+       |             ^
+  1263 |               file={currentPdfFile}
+  1264 |               docId={currentPdfDocId || undefined}
+  1265 |               onExtractNode={(text, sourceRef) => {
 Call Stack
+15
+
+Show 10 ignore-listed frame(s)
+Object.defineProperty
+<anonymous>
+(app-pages-browser)/./node_modules/pdfjs-dist/build/pdf.mjs
+.next\static\chunks\_app-pages-browser_src_app_components_PDFViewer_tsx.js (72:1)
+eval
+./src/app/components/PDFViewer.tsx
+(app-pages-browser)/./src/app/components/PDFViewer.tsx
+.next\static\chunks\_app-pages-browser_src_app_components_PDFViewer_tsx.js (303:1)
+Home
+src\app\page.tsx (1262:13)
 
 
+webpack.js:1 Uncaught TypeError: Object.defineProperty called on non-object
+    at Object.defineProperty (<anonymous>)
+    at (:3000/app-pages-brow…FViewer_tsx.js:72:1)
+    at eval (PDFViewer.tsx:8:67)
+    at (:3000/app-pages-brow…Viewer_tsx.js:303:1)
 
-
-Console Error
-
-
-HTTP 422 {"detail":[{"type":"missing","loc":["body","edges",11,"relation"],"msg":"Field required","input":{"from_id":"n2","to_id":"n1","type":"CAUSES","status":"ACCEPTED","mechanisms":["Reducing work hours leads to increased employee motivation","Reducing work hours allows for better work-life balance","Reducing work hours enables employees to focus on tasks without distractions"],"assumptions":["A causal relationship exists between reducing work hours and increasing productivity","Reducing work hours is the primary cause of increased productivity"],"confounders":["Employee demographics (age, experience, etc.)","Job type and requirements","Industry and work environment"]}}]}
-
-src\app\page.tsx (561:13) @ composeFromSelectionBase
-
-
-  559 |     if (!r.ok) {
-  560 |       const text = await r.text().catch(() => '')
-> 561 |       throw new Error(`HTTP ${r.status} ${text}`)
-      |             ^
-  562 |     }
-  563 |
-  564 |     const data = await r.json()
-Call Stack
-
-
-
-
-
-
-
-error @ intercept-console-error.js:57Understand this error
+﻿

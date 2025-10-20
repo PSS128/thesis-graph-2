@@ -18,7 +18,17 @@ def _lazy_models():
     global _embedder
     if _embedder is None:
         from sentence_transformers import SentenceTransformer
-        _embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        import torch
+        # Fix for PyTorch meta tensor issue
+        try:
+            # Try to use CPU explicitly to avoid device transfer issues
+            _embedder = SentenceTransformer("all-MiniLM-L6-v2", device='cpu')
+        except Exception as e:
+            print(f"[embeddings] Warning: {e}")
+            # Fallback: force CPU and ignore warnings
+            import os
+            os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
+            _embedder = SentenceTransformer("all-MiniLM-L6-v2", device='cpu')
     return _embedder
 
 def _lazy_index(d: int):

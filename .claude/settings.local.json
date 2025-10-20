@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(curl:*)",
-      "Bash(tasklist //FI \"IMAGENAME eq python.exe\")"
+      "Bash(tasklist //FI \"IMAGENAME eq python.exe\")",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(netstat:*)",
+      "Bash(python:*)",
+      "Bash(timeout:*)",
+      "Bash(rm:*)",
+      "Bash(awk:*)",
+      "Bash(xargs -I {} taskkill //F //PID {})",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []

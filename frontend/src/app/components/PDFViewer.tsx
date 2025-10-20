@@ -1,12 +1,24 @@
 'use client'
 
-import React, { useState, useCallback } from 'react'
-import { Document, Page, pdfjs } from 'react-pdf'
+import React, { useState, useCallback, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import './pdf-styles.css'
 
-// Configure worker - use dynamic import to avoid SSR issues
+// Dynamically import react-pdf components to avoid SSR issues
+const Document = dynamic(
+  () => import('react-pdf').then((mod) => mod.Document),
+  { ssr: false }
+)
+const Page = dynamic(
+  () => import('react-pdf').then((mod) => mod.Page),
+  { ssr: false }
+)
+
+// Configure worker on client side only
 if (typeof window !== 'undefined') {
-  pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
+  import('react-pdf').then((mod) => {
+    mod.pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${mod.pdfjs.version}/build/pdf.worker.min.mjs`
+  })
 }
 
 type Props = {
