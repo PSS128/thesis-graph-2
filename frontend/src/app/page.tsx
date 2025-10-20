@@ -29,6 +29,7 @@ type NodeT = {
   name?: string
   kind?: 'THESIS' | 'VARIABLE' | 'ASSUMPTION'
   definition?: string
+  rationale?: string
   synonyms?: string[]
   measurement_ideas?: string[]
   citations?: CitationRef[]
@@ -205,9 +206,10 @@ export default function Home() {
   // Phase 4: missing pieces modal
   const [showMissingPieces, setShowMissingPieces] = useState(false)
   const [missingPieces, setMissingPieces] = useState<{
-    mediators: string[]
-    moderators: string[]
-    study_designs: string[]
+    mediators: { name: string; definition: string; rationale: string }[]
+    moderators: { name: string; definition: string; rationale: string }[]
+    measurements: { approach: string; description: string; pros: string[]; cons: string[] }[]
+    confounders: { name: string; definition: string; rationale: string }[]
   } | null>(null)
   const [fetchingMissingPieces, setFetchingMissingPieces] = useState(false)
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
@@ -935,7 +937,7 @@ export default function Home() {
         status: getEdgeStatus(e) as 'PROPOSED' | 'ACCEPTED' | 'REJECTED'
       }))
 
-      const r = await fetch(`${API}/graph/suggest_mediators`, {
+      const r = await fetch(`${API}/graph/missing_pieces`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -950,38 +952,55 @@ export default function Home() {
       setMissingPieces(data)
     } catch (e: any) {
       console.error('Failed to fetch missing pieces:', e)
-      setMissingPieces({ mediators: [], moderators: [], study_designs: [] })
+      setMissingPieces({ mediators: [], moderators: [], measurements: [], confounders: [] })
     } finally {
       setFetchingMissingPieces(false)
     }
   }
 
-  function acceptMediator(mediator: string) {
+  function acceptMediator(mediator: { name: string; definition: string; rationale: string }) {
     const id = `N${Math.random().toString(36).slice(2, 7)}`
     const newNode: NodeT = {
       id,
-      name: mediator,
+      name: mediator.name,
       kind: 'VARIABLE',
-      definition: `Mediator variable: ${mediator}`
+      definition: mediator.definition,
+      rationale: mediator.rationale
     }
 
     setNodes((prev) => [...prev, newNode])
     setSelected((prev) => ({ ...prev, [id]: true }))
-    alert(`Added mediator: ${mediator}`)
+    alert(`Added mediator: ${mediator.name}`)
   }
 
-  function acceptModerator(moderator: string) {
+  function acceptModerator(moderator: { name: string; definition: string; rationale: string }) {
     const id = `N${Math.random().toString(36).slice(2, 7)}`
     const newNode: NodeT = {
       id,
-      name: moderator,
+      name: moderator.name,
       kind: 'VARIABLE',
-      definition: `Moderator variable: ${moderator}`
+      definition: moderator.definition,
+      rationale: moderator.rationale
     }
 
     setNodes((prev) => [...prev, newNode])
     setSelected((prev) => ({ ...prev, [id]: true }))
-    alert(`Added moderator: ${moderator}`)
+    alert(`Added moderator: ${moderator.name}`)
+  }
+
+  function acceptConfounder(confounder: { name: string; definition: string; rationale: string }) {
+    const id = `N${Math.random().toString(36).slice(2, 7)}`
+    const newNode: NodeT = {
+      id,
+      name: confounder.name,
+      kind: 'VARIABLE',
+      definition: confounder.definition,
+      rationale: confounder.rationale
+    }
+
+    setNodes((prev) => [...prev, newNode])
+    setSelected((prev) => ({ ...prev, [id]: true }))
+    alert(`Added confounder: ${confounder.name}`)
   }
 
   // ---------------- Phase 4: Graph Critique ----------------
@@ -1794,6 +1813,7 @@ export default function Home() {
             loading={fetchingMissingPieces}
             onAcceptMediator={acceptMediator}
             onAcceptModerator={acceptModerator}
+            onAcceptConfounder={acceptConfounder}
             onClose={() => setShowMissingPieces(false)}
           />
         </>

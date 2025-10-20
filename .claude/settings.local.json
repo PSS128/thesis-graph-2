@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(tasklist //FI \"IMAGENAME eq python.exe\")"
     ],
     "deny": [],
     "ask": []
