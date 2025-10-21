@@ -10,5 +10,20 @@ Interactive use case: Causal Thesis Builder (user-driven DAG with an LLM co-pilo
   2. Build the node extraction endpoint - This is the entry point for user interaction
   3. Update the frontend - Add text-to-node and edge-drawing capabilities to GraphCanvas.tsx
 
-
+ 1. Export Features (1-2 days)
+    - Export graph as PNG image
+    - Export graph data as JSON
+    - Export to Markdown document
+  2. Auto-Layout (2-3 days)
+    - Implement a simple hierarchical layout algorithm
+    - Add "Auto-arrange" button
+    - Improve node positioning on initial creation
+  3. Undo/Redo (1 day)
+    - Track state history
+    - Add undo/redo buttons
+    - Keyboard shortcuts (Ctrl+Z, Ctrl+Y)
+  4. Better Error Handling (1 day)
+    - Toast notifications for errors
+    - Graceful API failure handling
+    - User-friendly error messages
 #python -m uvicorn app.main:app --reload --port 8000 --log-level debug

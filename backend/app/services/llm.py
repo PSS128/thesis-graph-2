@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
+from . import cache
 load_dotenv()
 
 # --- API keys ---
@@ -163,7 +164,13 @@ def chat_json(
     """
     Ask for strict JSON and parse it. Returns dict or None.
     Uses OpenAI JSON mode when available to reduce parse failures.
+    Caches responses for faster repeated queries.
     """
+    # Check cache first
+    cached = cache.get("llm_json", system_prompt, user_prompt, temperature, max_tokens, ttl=cache.LLM_CACHE_TTL)
+    if cached is not None:
+        return cached
+
     # Strengthen the instruction regardless of provider.
     sys = (system_prompt or "") + "\nReturn ONLY a single valid JSON object. Start with '{' and end with '}'."
     usr = user_prompt
@@ -171,11 +178,15 @@ def chat_json(
     text, used = _chat(sys, usr, temperature=temperature, max_tokens=max_tokens, json_mode=True)
     data = _extract_json_strict(text)
     if data is not None:
+        # Cache successful result
+        cache.set("llm_json", data, system_prompt, user_prompt, temperature, max_tokens)
         return data
 
     # Second chance with relaxed fixups (helps Groq or non-JSON-mode outputs)
     data = _extract_json_relaxed(text)
     if data is not None:
+        # Cache successful result
+        cache.set("llm_json", data, system_prompt, user_prompt, temperature, max_tokens)
         return data
 
     print("[chat_json] model did not return strict JSON; using None fallback.")
@@ -201,7 +212,15 @@ def compose_outline_essay(
       - If the model responded at all, we try to keep used=True, even if we salvage.
       - Only when we never reached a model (no creds/network fail) do we return used=False.
     """
+    # Create cache key from inputs
     node_lines = "\n".join(f"- {n.get('text','').strip()}" for n in nodes if n.get("text"))
+    cache_key_data = (thesis, node_lines, words, audience, tone)
+
+    # Check cache first
+    cached = cache.get("llm_compose", *cache_key_data, ttl=cache.LLM_CACHE_TTL)
+    if cached is not None:
+        return cached, True  # Return cached result with used=True
+
     system_prompt = (
         "You are a careful reasoning assistant. "
         "Return STRICT JSON ONLY: {\"outline\":[{\"heading\":\"...\",\"points\":[\"...\"]}],"
@@ -220,6 +239,8 @@ def compose_outline_essay(
     # Prefer strict JSON
     data = _extract_json_strict(text) or _extract_json_relaxed(text) or {}
     if data.get("outline") and data.get("essay_md"):
+        # Cache successful result
+        cache.set("llm_compose", data, *cache_key_data)
         return data, used
 
     # Salvage the model text if we got any — keep used=True so the badge flips on.

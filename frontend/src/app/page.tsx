@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import GraphCanvas from './components/GraphCanvas'
+import { useHistory } from './hooks/useHistory'
 import EdgeRationaleCard from './components/EdgeRationaleCard'
 import CitationPanel from './components/CitationPanel'
 import NodeExtractCard from './components/NodeExtractCard'
@@ -10,6 +11,7 @@ import NodeContextMenu from './components/NodeContextMenu'
 import MissingPiecesModal from './components/MissingPiecesModal'
 import GraphCritiquePanel from './components/GraphCritiquePanel'
 import FileUploadZone from './components/FileUploadZone'
+import Toast, { ToastMessage } from './components/Toast'
 
 // ---------- Types ----------
 type CitationRef = {
@@ -112,13 +114,47 @@ export default function Home() {
     'Technology broadens access to educational resources. Interactive tools deepen engagement and retention. Data-driven feedback accelerates skill development. Personalization fosters equity and efficiency. Responsible implementation is essential.'
   )
 
-  // graph state
-  const [nodes, setNodes] = useState<NodeT[]>([])
-  const [edges, setEdges] = useState<EdgeT[]>([])
+  // graph state with undo/redo
+  type GraphState = { nodes: NodeT[]; edges: EdgeT[] }
+  const {
+    state: graphState,
+    set: setGraphState,
+    undo,
+    redo,
+    reset: resetHistory,
+    canUndo,
+    canRedo
+  } = useHistory<GraphState>({ nodes: [], edges: [] })
+
+  const nodes = graphState.nodes
+  const edges = graphState.edges
+
+  // Helper to update nodes/edges with history tracking
+  const setNodes = useCallback((newNodes: NodeT[] | ((prev: NodeT[]) => NodeT[])) => {
+    const updated = typeof newNodes === 'function' ? newNodes(graphState.nodes) : newNodes
+    setGraphState({ nodes: updated, edges: graphState.edges })
+  }, [graphState, setGraphState])
+
+  const setEdges = useCallback((newEdges: EdgeT[] | ((prev: EdgeT[]) => EdgeT[])) => {
+    const updated = typeof newEdges === 'function' ? newEdges(graphState.edges) : newEdges
+    setGraphState({ nodes: graphState.nodes, edges: updated })
+  }, [graphState, setGraphState])
+
   const [citations, setCitations] = useState<Record<string, Citation[]>>({})
 
   // ui state
   const [busy, setBusy] = useState<Busy>('idle')
+  const [toasts, setToasts] = useState<ToastMessage[]>([])
+
+  // Toast helper functions
+  const showToast = (type: ToastMessage['type'], message: string, duration?: number) => {
+    const id = Date.now().toString()
+    setToasts((prev) => [...prev, { id, type, message, duration }])
+  }
+
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }
 
   // projects
   const [projectId, setProjectId] = useState<number | null>(null)
@@ -238,6 +274,31 @@ export default function Home() {
     refreshProjects().catch(() => {})
   }, [])
 
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + Z for undo
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        if (canUndo) {
+          undo()
+          showToast('info', 'Undid last action', 2000)
+        }
+      }
+      // Ctrl/Cmd + Shift + Z or Ctrl/Cmd + Y for redo
+      if (((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z') || ((e.ctrlKey || e.metaKey) && e.key === 'y')) {
+        e.preventDefault()
+        if (canRedo) {
+          redo()
+          showToast('info', 'Redid last action', 2000)
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [canUndo, canRedo, undo, redo])
+
   useEffect(() => {
     if (!projectId) return
     setDirty(true)
@@ -279,17 +340,22 @@ export default function Home() {
       setNodes(next)
       if (!next.length) {
         console.warn('Extract returned an empty list.')
-        alert('Extract returned no nodes.')
+        showToast('warning', 'Extract returned no nodes.')
+      } else {
+        showToast('success', `Extracted ${next.length} node${next.length > 1 ? 's' : ''}`)
       }
     } catch (e: any) {
-      alert(`Failed to extract nodes:\n${e.message || e}`)
+      showToast('error', `Failed to extract nodes: ${e.message || e}`)
     } finally {
       setBusy('idle')
     }
   }
 
   const suggest = async () => {
-    if (!nodes.length) return alert('Run Extract first.')
+    if (!nodes.length) {
+      showToast('warning', 'Run Extract first.')
+      return
+    }
     setBusy('suggest')
     try {
       const res = await fetch(`${API}/edges/suggest`, {
@@ -303,10 +369,12 @@ export default function Home() {
       setEdges(next)
       if (!next.length) {
         console.warn('Suggest returned an empty list.')
-        alert('No links suggested.')
+        showToast('info', 'No links suggested.')
+      } else {
+        showToast('success', `Suggested ${next.length} edge${next.length > 1 ? 's' : ''}`)
       }
     } catch (e: any) {
-      alert(`Failed to suggest edges:\n${e.message || e}`)
+      showToast('error', `Failed to suggest edges: ${e.message || e}`)
     } finally {
       setBusy('idle')
     }
@@ -338,9 +406,14 @@ export default function Home() {
         ])
       }
 
-      alert('File indexed ✅')
+      showToast('success', `File "${file.name}" uploaded! Indexing in background...`, 3000)
+
+      // Show completion message after delay (assuming background task completes)
+      setTimeout(() => {
+        showToast('info', `"${file.name}" is now searchable for citations`, 4000)
+      }, 5000) // Adjust based on typical file size
     } catch (e: any) {
-      alert(`Upload failed:\n${e.message || e}`)
+      showToast('error', `Upload failed: ${e.message || e}`)
       throw e // Re-throw for FileUploadZone to handle
     } finally {
       setBusy('idle')
@@ -370,7 +443,7 @@ export default function Home() {
       const data: Citation[] = await r.json()
       setCitations((prev) => ({ ...prev, [n.id]: data }))
     } catch (e: any) {
-      alert(`Citations failed:\n${e.message || e}`)
+      showToast('error', `Citations failed: ${e.message || e}`)
     } finally {
       setBusy('idle')
     }
@@ -390,7 +463,7 @@ export default function Home() {
       `${API}/projects?title=${encodeURIComponent(projectTitle || 'Untitled Project')}`,
       { method: 'POST' }
     )
-    if (!r.ok) return alert('Failed to create project')
+    if (!r.ok) showToast('error', 'Failed to create project'); return
     const p: ProjectMeta = await r.json()
     setProjectId(p.id)
     await refreshProjects()
@@ -398,32 +471,41 @@ export default function Home() {
   }
 
   async function renameProject() {
-    if (!projectId) return alert('No project selected.')
+    if (!projectId) {
+      showToast('warning', 'No project selected.')
+      return
+    }
     const r = await fetch(`${API}/projects/${projectId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: projectTitle || 'Untitled Project' })
     })
-    if (!r.ok) return alert('Rename failed')
+    if (!r.ok) showToast('error', 'Rename failed'); return
     await refreshProjects()
-    alert('Renamed ✅')
+    showToast('success', 'Project renamed successfully')
   }
 
   async function deleteProject() {
-    if (!projectId) return alert('No project selected.')
+    if (!projectId) {
+      showToast('warning', 'No project selected.')
+      return
+    }
     if (!confirm(`Delete project #${projectId}? This cannot be undone.`)) return
     const r = await fetch(`${API}/projects/${projectId}`, { method: 'DELETE' })
-    if (!r.ok) return alert('Delete failed')
+    if (!r.ok) showToast('error', 'Delete failed'); return
     setProjectId(null)
     setProjectTitle('')
     setNodes([]); setEdges([]); setCitations({}); setSelected({})
     setOutline([]); setEssay(''); setReferences([])
     await refreshProjects()
-    alert('Deleted ✅')
+    showToast('success', 'Project deleted successfully')
   }
 
   async function saveProject() {
-    if (!projectId) return alert('Create or select a project first.')
+    if (!projectId) {
+      showToast('warning', 'Create or select a project first.')
+      return
+    }
     setBusy('save')
     try {
       const payload = { nodes, edges }
@@ -438,7 +520,7 @@ export default function Home() {
       }
       setLastSaved(Date.now())
       setDirty(false)
-      alert('Saved ✅')
+      showToast('success', 'Project saved successfully')
     } catch (e: any) {
       console.error('Save error:', e)
       alert(`Save failed:\n${e.message || e}`)
@@ -467,7 +549,7 @@ export default function Home() {
 
   async function loadProject(id: number) {
     const r = await fetch(`${API}/projects/${id}`)
-    if (!r.ok) return alert('Load failed')
+    if (!r.ok) showToast('error', 'Load failed'); return
     const data = await r.json()
     setProjectId(data.project.id)
     setProjectTitle(data.project.title)
@@ -485,7 +567,10 @@ export default function Home() {
 
   // ---------------- Export / Import ----------------
   async function exportProject() {
-    if (!projectId) return alert('Create or select a project first.')
+    if (!projectId) {
+      showToast('warning', 'Create or select a project first.')
+      return
+    }
     const r = await fetch(`${API}/projects/${projectId}/export`)
     if (!r.ok) return alert(`Export failed: ${await r.text()}`)
     const data = await r.json()
@@ -610,7 +695,10 @@ export default function Home() {
 
   async function composeWithCitations() {
     const chosen = nodes.filter((n) => selected[n.id])
-    if (chosen.length === 0) return alert('Select at least one node.')
+    if (chosen.length === 0) {
+      showToast('warning', 'Select at least one node.')
+      return
+    }
     const selIds = new Set(chosen.map((n) => n.id))
     const chosenEdges = edges.filter((e) => selIds.has(e.from_id) && selIds.has(e.to_id))
 
@@ -648,7 +736,10 @@ export default function Home() {
 
   async function composeFromSelection() {
     const chosen = nodes.filter((n) => selected[n.id])
-    if (chosen.length === 0) return alert('Select at least one node.')
+    if (chosen.length === 0) {
+      showToast('warning', 'Select at least one node.')
+      return
+    }
     const selIds = new Set(chosen.map((n) => n.id))
     const chosenEdges = edges.filter((e) => selIds.has(e.from_id) && selIds.has(e.to_id))
     if (citeMode) await composeWithCitations()
@@ -1365,6 +1456,48 @@ export default function Home() {
           {busy === 'suggest' ? 'Suggesting…' : 'Suggest Links'}
         </button>
 
+        {/* Undo/Redo buttons */}
+        <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid #ddd', paddingLeft: 8, marginLeft: 4 }}>
+          <button
+            onClick={() => {
+              undo()
+              showToast('info', 'Undid last action', 2000)
+            }}
+            disabled={!canUndo}
+            title="Undo (Ctrl+Z)"
+            style={{
+              padding: '8px 12px',
+              border: '1px solid #1890ff',
+              background: canUndo ? '#e6f7ff' : '#f5f5f5',
+              color: canUndo ? '#1890ff' : '#999',
+              borderRadius: 8,
+              cursor: canUndo ? 'pointer' : 'not-allowed',
+              fontWeight: 600
+            }}
+          >
+            ↶ Undo
+          </button>
+          <button
+            onClick={() => {
+              redo()
+              showToast('info', 'Redid last action', 2000)
+            }}
+            disabled={!canRedo}
+            title="Redo (Ctrl+Shift+Z)"
+            style={{
+              padding: '8px 12px',
+              border: '1px solid #1890ff',
+              background: canRedo ? '#e6f7ff' : '#f5f5f5',
+              color: canRedo ? '#1890ff' : '#999',
+              borderRadius: 8,
+              cursor: canRedo ? 'pointer' : 'not-allowed',
+              fontWeight: 600
+            }}
+          >
+            ↷ Redo
+          </button>
+        </div>
+
         {/* Compose controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexWrap: 'wrap' }}>
           <label style={{ fontSize: 12 }}>
@@ -1926,6 +2059,9 @@ export default function Home() {
           onClose={() => setShowCritique(false)}
         />
       )}
+
+      {/* Toast Notifications */}
+      <Toast toasts={toasts} onRemove={removeToast} />
     </main>
   )
 }

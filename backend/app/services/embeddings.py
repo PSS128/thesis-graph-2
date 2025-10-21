@@ -3,6 +3,7 @@ import os, json, hashlib
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 import numpy as np
+from . import cache
 
 STORAGE = Path(__file__).resolve().parent.parent / "storage"
 STORAGE.mkdir(exist_ok=True)
@@ -58,7 +59,7 @@ _load_docstore()
 def _hash(s: str) -> str:
     return hashlib.sha1(s.encode("utf-8")).hexdigest()[:12]
 
-def chunk_text(txt: str, size: int = 900, overlap: int = 150) -> List[str]:
+def chunk_text(txt: str, size: int = 600, overlap: int = 100) -> List[str]:
     txt = " ".join(txt.split())
     chunks = []
     i = 0
@@ -77,7 +78,15 @@ def add_document(doc_title: str, source: str, text: str) -> Dict[str, Any]:
     if not chunks:
         return {"added": 0}
 
-    vecs = _embedder.encode(chunks, convert_to_numpy=True, normalize_embeddings=True)
+    # Process embeddings in batches for better performance
+    batch_size = 32  # Process 32 chunks at a time
+    all_vecs = []
+    for i in range(0, len(chunks), batch_size):
+        batch = chunks[i:i+batch_size]
+        batch_vecs = _embedder.encode(batch, convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False)
+        all_vecs.append(batch_vecs)
+
+    vecs = np.vstack(all_vecs) if len(all_vecs) > 1 else all_vecs[0]
     index = _lazy_index(vecs.shape[1])
     start_id = len(_docstore.get("chunks", [])) if _docstore else 0
 
@@ -108,6 +117,11 @@ def add_document(doc_title: str, source: str, text: str) -> Dict[str, Any]:
     return {"added": len(chunks), "doc_id": doc_id}
 
 def retrieve(query: str, k: int = 3) -> List[Dict[str, Any]]:
+    # Check cache first
+    cached = cache.get("embeddings_retrieve", query, k, ttl=cache.EMBEDDING_CACHE_TTL)
+    if cached is not None:
+        return cached
+
     _ = _lazy_models()
     index = _lazy_index(384)  # MiniLM dim
     if index.ntotal == 0:
@@ -135,4 +149,7 @@ def retrieve(query: str, k: int = 3) -> List[Dict[str, Any]]:
             "text": chunk["text"],
             "doc": {"id": chunk["doc_id"], "title": doc.get("title"), "source": doc.get("source")}
         })
+
+    # Cache the result
+    cache.set("embeddings_retrieve", out, query, k)
     return out
