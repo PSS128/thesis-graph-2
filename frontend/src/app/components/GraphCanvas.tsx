@@ -118,6 +118,13 @@ export default function GraphCanvas({
   const [hoveredNode, setHoveredNode] = useState<{ node: NodeT; x: number; y: number } | null>(null)
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  // Zoom and pan state
+  const [zoom, setZoom] = useState<number>(1)
+  const [panX, setPanX] = useState<number>(0)
+  const [panY, setPanY] = useState<number>(0)
+  const isPanning = useRef<boolean>(false)
+  const panStart = useRef<{ x: number; y: number } | null>(null)
+
   // Initialize positions when nodes change (keep old positions if present)
   useEffect(() => {
     setPos((prev) => {
@@ -511,6 +518,8 @@ export default function GraphCanvas({
           </marker>
         </defs>
 
+        {/* Main group with zoom and pan transform */}
+        <g transform={`translate(${panX}, ${panY}) scale(${zoom})`}>
         {/* edges */}
         {edges.map((e, idx) => {
           const from = renderedNodes.find((n) => n.id === e.from_id)
@@ -833,7 +842,78 @@ export default function GraphCanvas({
             </g>
           )
         })}
+        </g>
       </svg>
+
+      {/* Zoom controls */}
+      <div style={{
+        position: 'absolute',
+        bottom: 16,
+        right: 16,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        background: 'white',
+        padding: '8px',
+        borderRadius: 8,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+        zIndex: 10
+      }}>
+        <button
+          onClick={() => setZoom(z => Math.min(z * 1.2, 3))}
+          title="Zoom In"
+          style={{
+            padding: '6px 12px',
+            border: '1px solid #d9d9d9',
+            borderRadius: 4,
+            background: 'white',
+            cursor: 'pointer',
+            fontSize: 16,
+            fontWeight: 'bold'
+          }}
+        >
+          +
+        </button>
+        <button
+          onClick={() => setZoom(z => Math.max(z / 1.2, 0.1))}
+          title="Zoom Out"
+          style={{
+            padding: '6px 12px',
+            border: '1px solid #d9d9d9',
+            borderRadius: 4,
+            background: 'white',
+            cursor: 'pointer',
+            fontSize: 16,
+            fontWeight: 'bold'
+          }}
+        >
+          −
+        </button>
+        <button
+          onClick={() => { setZoom(1); setPanX(0); setPanY(0) }}
+          title="Reset View"
+          style={{
+            padding: '6px 12px',
+            border: '1px solid #d9d9d9',
+            borderRadius: 4,
+            background: 'white',
+            cursor: 'pointer',
+            fontSize: 12
+          }}
+        >
+          ↺
+        </button>
+        <div style={{
+          fontSize: 11,
+          color: '#666',
+          textAlign: 'center',
+          padding: '4px 0',
+          borderTop: '1px solid #e8e8e8',
+          marginTop: 4
+        }}>
+          {Math.round(zoom * 100)}%
+        </div>
+      </div>
 
       {/* Tooltip - rendered outside SVG as HTML */}
       {hoveredNode && (

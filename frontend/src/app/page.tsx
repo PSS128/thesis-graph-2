@@ -12,6 +12,8 @@ import MissingPiecesModal from './components/MissingPiecesModal'
 import GraphCritiquePanel from './components/GraphCritiquePanel'
 import FileUploadZone from './components/FileUploadZone'
 import Toast, { ToastMessage } from './components/Toast'
+import { exportGraphAsPNG, exportGraphAsJSON, exportGraphAsMarkdown } from './utils/export'
+import { hierarchicalLayout, forceDirectedLayout, circularLayout, gridLayout, getOptimalPositionForNewNode } from './utils/graphLayout'
 
 // ---------- Types ----------
 type CitationRef = {
@@ -581,6 +583,77 @@ export default function Home() {
     a.download = `project-${projectId}.json`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  // New export functions
+  function handleExportAsPNG() {
+    try {
+      exportGraphAsPNG('graph-canvas', `thesis-graph-${Date.now()}.png`)
+      showToast('success', 'Graph exported as PNG')
+    } catch (error) {
+      showToast('error', 'Failed to export PNG')
+      console.error(error)
+    }
+  }
+
+  function handleExportAsJSON() {
+    try {
+      const metadata = {
+        projectId,
+        projectTitle,
+        thesis: thesis || '',
+        exportedAt: new Date().toISOString()
+      }
+      exportGraphAsJSON(nodes, edges, metadata, `graph-${Date.now()}.json`)
+      showToast('success', 'Graph data exported as JSON')
+    } catch (error) {
+      showToast('error', 'Failed to export JSON')
+      console.error(error)
+    }
+  }
+
+  function handleExportAsMarkdown() {
+    try {
+      exportGraphAsMarkdown(nodes, edges, thesis || '', `graph-${Date.now()}.md`)
+      showToast('success', 'Graph exported as Markdown')
+    } catch (error) {
+      showToast('error', 'Failed to export Markdown')
+      console.error(error)
+    }
+  }
+
+  // Auto-layout functions
+  function handleAutoLayout(layoutType: 'hierarchical' | 'force' | 'circular' | 'grid') {
+    try {
+      let newNodes: NodeT[]
+
+      switch (layoutType) {
+        case 'hierarchical':
+          newNodes = hierarchicalLayout(nodes, edges)
+          showToast('success', 'Applied hierarchical layout')
+          break
+        case 'force':
+          newNodes = forceDirectedLayout(nodes, edges, 50)
+          showToast('success', 'Applied force-directed layout')
+          break
+        case 'circular':
+          newNodes = circularLayout(nodes, 300)
+          showToast('success', 'Applied circular layout')
+          break
+        case 'grid':
+          newNodes = gridLayout(nodes, 4, 200)
+          showToast('success', 'Applied grid layout')
+          break
+        default:
+          return
+      }
+
+      setNodes(newNodes)
+      setDirty(true)
+    } catch (error) {
+      showToast('error', 'Failed to apply layout')
+      console.error(error)
+    }
   }
 
   async function importProject(file: File) {
@@ -1221,7 +1294,7 @@ export default function Home() {
           disabled={!projectId}
           style={{ padding: '8px 12px', border: '1px solid #333', borderRadius: 8 }}
         >
-          Export
+          Export Project
         </button>
         <label style={{ display: 'inline-block' }}>
           <span
@@ -1236,6 +1309,94 @@ export default function Home() {
             onChange={(e) => e.target.files?.[0] && importProject(e.target.files[0])}
           />
         </label>
+
+        {/* Export Graph Buttons */}
+        <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid #ddd', paddingLeft: 8, marginLeft: 4 }}>
+          <button
+            onClick={handleExportAsPNG}
+            disabled={nodes.length === 0}
+            title="Export graph as PNG image"
+            style={{
+              padding: '8px 12px',
+              border: '1px solid #52c41a',
+              background: nodes.length > 0 ? '#f6ffed' : '#f5f5f5',
+              color: nodes.length > 0 ? '#52c41a' : '#999',
+              borderRadius: 8,
+              cursor: nodes.length > 0 ? 'pointer' : 'not-allowed',
+              fontWeight: 600
+            }}
+          >
+            PNG
+          </button>
+          <button
+            onClick={handleExportAsJSON}
+            disabled={nodes.length === 0}
+            title="Export graph data as JSON"
+            style={{
+              padding: '8px 12px',
+              border: '1px solid #1890ff',
+              background: nodes.length > 0 ? '#e6f7ff' : '#f5f5f5',
+              color: nodes.length > 0 ? '#1890ff' : '#999',
+              borderRadius: 8,
+              cursor: nodes.length > 0 ? 'pointer' : 'not-allowed',
+              fontWeight: 600
+            }}
+          >
+            JSON
+          </button>
+          <button
+            onClick={handleExportAsMarkdown}
+            disabled={nodes.length === 0}
+            title="Export graph as Markdown document"
+            style={{
+              padding: '8px 12px',
+              border: '1px solid #722ed1',
+              background: nodes.length > 0 ? '#f9f0ff' : '#f5f5f5',
+              color: nodes.length > 0 ? '#722ed1' : '#999',
+              borderRadius: 8,
+              cursor: nodes.length > 0 ? 'pointer' : 'not-allowed',
+              fontWeight: 600
+            }}
+          >
+            MD
+          </button>
+        </div>
+
+        {/* Auto-Layout Buttons */}
+        <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid #ddd', paddingLeft: 8, marginLeft: 4 }}>
+          <button
+            onClick={() => handleAutoLayout('hierarchical')}
+            disabled={nodes.length < 2}
+            title="Auto-arrange nodes hierarchically"
+            style={{
+              padding: '8px 12px',
+              border: '1px solid #fa8c16',
+              background: nodes.length >= 2 ? '#fff7e6' : '#f5f5f5',
+              color: nodes.length >= 2 ? '#fa8c16' : '#999',
+              borderRadius: 8,
+              cursor: nodes.length >= 2 ? 'pointer' : 'not-allowed',
+              fontWeight: 600
+            }}
+          >
+            Hierarchical
+          </button>
+          <button
+            onClick={() => handleAutoLayout('force')}
+            disabled={nodes.length < 2}
+            title="Auto-arrange nodes using force-directed layout"
+            style={{
+              padding: '8px 12px',
+              border: '1px solid #13c2c2',
+              background: nodes.length >= 2 ? '#e6fffb' : '#f5f5f5',
+              color: nodes.length >= 2 ? '#13c2c2' : '#999',
+              borderRadius: 8,
+              cursor: nodes.length >= 2 ? 'pointer' : 'not-allowed',
+              fontWeight: 600
+            }}
+          >
+            Force
+          </button>
+        </div>
         <select
           onChange={(e) => e.target.value && loadProject(Number(e.target.value))}
           value={projectId ?? ''}

@@ -1,0 +1,212 @@
+/**
+ * Export utilities for graph visualization
+ */
+
+export type NodeT = any
+export type EdgeT = any
+
+/**
+ * Export graph as PNG image using html2canvas
+ */
+export async function exportGraphAsPNG(
+  elementId: string,
+  filename: string = 'thesis-graph.png'
+): Promise<void> {
+  try {
+    // Dynamically import html2canvas to reduce bundle size
+    const html2canvas = (await import('html2canvas')).default
+
+    const element = document.getElementById(elementId)
+    if (!element) {
+      throw new Error(`Element with id "${elementId}" not found`)
+    }
+
+    // Capture the element as canvas
+    const canvas = await html2canvas(element, {
+      backgroundColor: '#ffffff',
+      scale: 2, // Higher resolution
+      logging: false,
+      useCORS: true
+    })
+
+    // Convert to blob and download
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        throw new Error('Failed to create blob from canvas')
+      }
+
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      link.click()
+      URL.revokeObjectURL(url)
+    }, 'image/png')
+  } catch (error) {
+    console.error('Failed to export PNG:', error)
+    throw error
+  }
+}
+
+/**
+ * Export graph data as JSON
+ */
+export function exportGraphAsJSON(
+  nodes: NodeT[],
+  edges: EdgeT[],
+  metadata: Record<string, any> = {},
+  filename: string = 'thesis-graph.json'
+): void {
+  const data = {
+    version: '1.0',
+    exportedAt: new Date().toISOString(),
+    metadata,
+    graph: {
+      nodes: nodes,
+      edges: edges
+    }
+  }
+
+  const jsonString = JSON.stringify(data, null, 2)
+  const blob = new Blob([jsonString], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+
+  URL.revokeObjectURL(url)
+}
+
+/**
+ * Export graph as Markdown document
+ */
+export function exportGraphAsMarkdown(
+  nodes: NodeT[],
+  edges: EdgeT[],
+  thesis: string = '',
+  filename: string = 'thesis-graph.md'
+): void {
+  const lines: string[] = []
+
+  // Helper function to get node label/text
+  const getNodeLabel = (node: any) => node.name || node.text || node.id
+
+  // Header
+  lines.push('# Thesis Graph Export')
+  lines.push('')
+  lines.push(`**Exported:** ${new Date().toLocaleString()}`)
+  lines.push('')
+
+  // Thesis
+  if (thesis) {
+    lines.push('## Thesis Statement')
+    lines.push('')
+    lines.push(thesis)
+    lines.push('')
+  }
+
+  // Nodes section
+  lines.push('## Variables and Claims')
+  lines.push('')
+
+  const nodesByKind = nodes.reduce((acc, node) => {
+    const kind = node.kind || node.type || 'VARIABLE'
+    if (!acc[kind]) acc[kind] = []
+    acc[kind].push(node)
+    return acc
+  }, {} as Record<string, NodeT[]>)
+
+  const kindOrder = ['THESIS', 'VARIABLE', 'ASSUMPTION', 'CLAIM']
+  kindOrder.forEach(kind => {
+    if (nodesByKind[kind] && nodesByKind[kind].length > 0) {
+      lines.push(`### ${kind}`)
+      lines.push('')
+      nodesByKind[kind].forEach((node: any) => {
+        lines.push(`- **${getNodeLabel(node)}**`)
+        if (node.citations && node.citations.length > 0) {
+          lines.push(`  - Citations: ${node.citations.length}`)
+        }
+      })
+      lines.push('')
+    }
+  })
+
+  // Edges section
+  lines.push('## Relationships')
+  lines.push('')
+
+  const edgesByType = edges.reduce((acc, edge) => {
+    const type = edge.type || edge.relation || 'CAUSES'
+    if (!acc[type]) acc[type] = []
+    acc[type].push(edge)
+    return acc
+  }, {} as Record<string, EdgeT[]>)
+
+  const typeOrder = ['CAUSES', 'MEDIATES', 'MODERATES', 'CONTRADICTS', 'SUPPORTS']
+  typeOrder.forEach(type => {
+    if (edgesByType[type] && edgesByType[type].length > 0) {
+      lines.push(`### ${type}`)
+      lines.push('')
+      edgesByType[type].forEach((edge: any) => {
+        const sourceNode = nodes.find((n: any) => n.id === (edge.from_id || edge.source))
+        const targetNode = nodes.find((n: any) => n.id === (edge.to_id || edge.target))
+
+        if (sourceNode && targetNode) {
+          lines.push(`- **${getNodeLabel(sourceNode)}** → **${getNodeLabel(targetNode)}**`)
+          if (edge.rationale) {
+            lines.push(`  - ${edge.rationale}`)
+          }
+          if (edge.citations && edge.citations.length > 0) {
+            lines.push(`  - Evidence: ${edge.citations.length} sources`)
+          }
+        }
+      })
+      lines.push('')
+    }
+  })
+
+  // Statistics
+  lines.push('## Statistics')
+  lines.push('')
+  lines.push(`- Total Nodes: ${nodes.length}`)
+  lines.push(`- Total Edges: ${edges.length}`)
+  lines.push(`- Node Types: ${Object.keys(nodesByKind).join(', ')}`)
+  lines.push(`- Edge Types: ${Object.keys(edgesByType).join(', ')}`)
+  lines.push('')
+
+  // Footer
+  lines.push('---')
+  lines.push('*Generated by Thesis Graph App*')
+
+  const markdown = lines.join('\n')
+  const blob = new Blob([markdown], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+
+  URL.revokeObjectURL(url)
+}
+
+/**
+ * Download any text content as a file
+ */
+export function downloadTextFile(
+  content: string,
+  filename: string,
+  mimeType: string = 'text/plain'
+): void {
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+
+  URL.revokeObjectURL(url)
+}
