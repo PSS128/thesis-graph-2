@@ -210,6 +210,13 @@ export default function GraphCanvas({
   }
 
   const onSvgMouseMove = (e: React.MouseEvent) => {
+    // Handle canvas panning
+    if (isPanning.current && panStart.current) {
+      setPanX(e.clientX - panStart.current.x)
+      setPanY(e.clientY - panStart.current.y)
+      return
+    }
+
     const p = ptFromEvent(e)
 
     // Handle lasso selection
@@ -246,6 +253,14 @@ export default function GraphCanvas({
   }
 
   const onSvgMouseDown = (e: React.MouseEvent) => {
+    // If middle mouse button or shift key, start panning
+    if (e.button === 1 || e.shiftKey) {
+      e.preventDefault()
+      isPanning.current = true
+      panStart.current = { x: e.clientX - panX, y: e.clientY - panY }
+      return
+    }
+
     // Only start lasso if clicking on background (not edge mode)
     if (!edgeMode && e.target === e.currentTarget) {
       const p = ptFromEvent(e)
@@ -255,6 +270,13 @@ export default function GraphCanvas({
   }
 
   const onSvgMouseUp = () => {
+    // Stop panning
+    if (isPanning.current) {
+      isPanning.current = false
+      panStart.current = null
+      return
+    }
+
     // Complete lasso selection
     if (lassoStart && lassoEnd && onToggleSelect) {
       const minX = Math.min(lassoStart.x, lassoEnd.x)
@@ -481,6 +503,28 @@ export default function GraphCanvas({
         position: 'relative'
       }}
     >
+      {/* Instructions panel at top */}
+      <div style={{
+        position: 'absolute',
+        top: 12,
+        left: 12,
+        background: 'rgba(255, 255, 255, 0.95)',
+        padding: '8px 12px',
+        borderRadius: 6,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        fontSize: 11,
+        color: '#595959',
+        zIndex: 10,
+        lineHeight: '1.6',
+        border: '1px solid #e8e8e8'
+      }}>
+        <div style={{ fontWeight: 600, marginBottom: 4, color: '#262626' }}>Canvas Controls:</div>
+        <div><strong>Click</strong> node to select/deselect</div>
+        <div><strong>Drag</strong> node to move it</div>
+        <div><strong>Shift + Drag</strong> canvas to pan</div>
+        <div><strong>Zoom controls</strong> in bottom-right corner</div>
+      </div>
+
       <svg
         ref={svgRef}
         width="100%"
@@ -491,7 +535,7 @@ export default function GraphCanvas({
         onClick={onSvgClick}
         style={{
           userSelect: 'none',
-          cursor: dragId.current ? 'grabbing' : lassoStart ? 'crosshair' : 'default'
+          cursor: isPanning.current ? 'grabbing' : dragId.current ? 'grabbing' : lassoStart ? 'crosshair' : 'default'
         }}
       >
         {/* defs for arrowheads */}

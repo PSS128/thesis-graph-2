@@ -12,6 +12,7 @@ import MissingPiecesModal from './components/MissingPiecesModal'
 import GraphCritiquePanel from './components/GraphCritiquePanel'
 import FileUploadZone from './components/FileUploadZone'
 import Toast, { ToastMessage } from './components/Toast'
+import HelpModal from './components/HelpModal'
 import { exportGraphAsPNG, exportGraphAsJSON, exportGraphAsMarkdown } from './utils/export'
 import { hierarchicalLayout, forceDirectedLayout, circularLayout, gridLayout, getOptimalPositionForNewNode } from './utils/graphLayout'
 
@@ -252,6 +253,9 @@ export default function Home() {
     { node_or_edge_id: string; label: string; fix_suggestion: string }[]
   >([])
   const [fetchingCritique, setFetchingCritique] = useState(false)
+
+  // Help modal
+  const [showHelp, setShowHelp] = useState(false)
 
   // Phase 5: PDF viewer
   const [uploadedFiles, setUploadedFiles] = useState<Array<{
@@ -1362,41 +1366,24 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Auto-Layout Buttons */}
-        <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid #ddd', paddingLeft: 8, marginLeft: 4 }}>
-          <button
-            onClick={() => handleAutoLayout('hierarchical')}
-            disabled={nodes.length < 2}
-            title="Auto-arrange nodes hierarchically"
-            style={{
-              padding: '8px 12px',
-              border: '1px solid #fa8c16',
-              background: nodes.length >= 2 ? '#fff7e6' : '#f5f5f5',
-              color: nodes.length >= 2 ? '#fa8c16' : '#999',
-              borderRadius: 8,
-              cursor: nodes.length >= 2 ? 'pointer' : 'not-allowed',
-              fontWeight: 600
-            }}
-          >
-            Hierarchical
-          </button>
-          <button
-            onClick={() => handleAutoLayout('force')}
-            disabled={nodes.length < 2}
-            title="Auto-arrange nodes using force-directed layout"
-            style={{
-              padding: '8px 12px',
-              border: '1px solid #13c2c2',
-              background: nodes.length >= 2 ? '#e6fffb' : '#f5f5f5',
-              color: nodes.length >= 2 ? '#13c2c2' : '#999',
-              borderRadius: 8,
-              cursor: nodes.length >= 2 ? 'pointer' : 'not-allowed',
-              fontWeight: 600
-            }}
-          >
-            Force
-          </button>
-        </div>
+        {/* Help Button */}
+        <button
+          onClick={() => setShowHelp(true)}
+          title="Open help and instructions"
+          style={{
+            padding: '8px 12px',
+            border: '1px solid #faad14',
+            background: '#fffbe6',
+            color: '#faad14',
+            borderRadius: 8,
+            cursor: 'pointer',
+            fontWeight: 600,
+            marginLeft: 4
+          }}
+        >
+          ? Help
+        </button>
+
         <select
           onChange={(e) => e.target.value && loadProject(Number(e.target.value))}
           value={projectId ?? ''}
@@ -1749,6 +1736,40 @@ export default function Home() {
             <option value="CONTRADICTS">CONTRADICTS</option>
           </select>
         </label>
+
+        <button
+          onClick={() => handleAutoLayout('hierarchical')}
+          disabled={nodes.length < 2}
+          title="Auto-arrange nodes hierarchically"
+          style={{
+            padding: '6px 10px',
+            border: '1px solid #fa8c16',
+            background: nodes.length >= 2 ? '#fff7e6' : '#f5f5f5',
+            color: nodes.length >= 2 ? '#fa8c16' : '#999',
+            borderRadius: 6,
+            cursor: nodes.length >= 2 ? 'pointer' : 'not-allowed',
+            fontWeight: 600,
+            marginLeft: 8
+          }}
+        >
+          Hierarchical
+        </button>
+        <button
+          onClick={() => handleAutoLayout('force')}
+          disabled={nodes.length < 2}
+          title="Auto-arrange nodes using force-directed layout"
+          style={{
+            padding: '6px 10px',
+            border: '1px solid #13c2c2',
+            background: nodes.length >= 2 ? '#e6fffb' : '#f5f5f5',
+            color: nodes.length >= 2 ? '#13c2c2' : '#999',
+            borderRadius: 6,
+            cursor: nodes.length >= 2 ? 'pointer' : 'not-allowed',
+            fontWeight: 600
+          }}
+        >
+          Force
+        </button>
 
         <button
           onClick={critiqueGraph}
@@ -2223,6 +2244,9 @@ export default function Home() {
 
       {/* Toast Notifications */}
       <Toast toasts={toasts} onRemove={removeToast} />
+
+      {/* Help Modal */}
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
     </main>
   )
 }
