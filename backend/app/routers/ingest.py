@@ -1,22 +1,46 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
+from pathlib import Path
 from ..services.embeddings import add_document
 import pdfplumber
-import io
 import hashlib
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
+# Storage configuration
+STORAGE = Path(__file__).resolve().parent.parent / "storage"
+UPLOAD_DIR = STORAGE / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+
 def _hash(s: str) -> str:
     return hashlib.sha1(s.encode("utf-8")).hexdigest()[:12]
 
-def process_embeddings_background(doc_title: str, source: str, text: str):
-    """Process embeddings in background thread"""
+def process_pdf_background(doc_id: str, doc_title: str, filename: str, file_path: Path):
+    """Extract text from PDF and generate embeddings in background thread"""
     try:
-        print(f"[Background] Starting embedding generation for: {doc_title}")
-        add_document(doc_title=doc_title, source=source, text=text)
-        print(f"[Background] Completed embedding generation for: {doc_title}")
+        print(f"[Background] Starting processing for: {doc_title}")
+
+        # Extract text from saved PDF
+        text = ""
+        if filename.lower().endswith(".pdf"):
+            with pdfplumber.open(file_path) as pdf:
+                parts = [page.extract_text() or "" for page in pdf.pages]
+                text = "\n".join(parts)
+        else:
+            # Handle plain text files
+            text = file_path.read_text(encoding="utf-8", errors="ignore")
+
+        # Generate embeddings
+        add_document(doc_title=doc_title, source=filename, text=text)
+
+        # Clean up file after successful processing
+        file_path.unlink(missing_ok=True)
+
+        print(f"[Background] Completed processing for: {doc_title}")
     except Exception as e:
-        print(f"[Background] Failed to generate embeddings: {e}")
+        print(f"[Background] Failed to process {doc_title}: {e}")
+        # Clean up file even on error
+        if file_path.exists():
+            file_path.unlink(missing_ok=True)
 
 @router.post("/upload")
 async def upload(
@@ -26,40 +50,32 @@ async def upload(
 ):
     name = file.filename or "uploaded"
     title = title or name
-    content_type = (file.content_type or "").lower()
 
-    # Extract text (fast operation)
+    # Read file bytes (fast - <1 second even for large PDFs)
     data = await file.read()
-    text = ""
-    page_count = None
 
-    try:
-        if name.lower().endswith(".pdf") or "pdf" in content_type:
-            # Wrap bytes in BytesIO to provide seek() method
-            pdf_file = io.BytesIO(data)
-            with pdfplumber.open(pdf_file) as pdf:
-                page_count = len(pdf.pages)
-                parts = [page.extract_text() or "" for page in pdf.pages]
-                text = "\n".join(parts)
-        else:
-            text = data.decode("utf-8", errors="ignore")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read file: {e}")
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file uploaded.")
 
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="No text extracted from file.")
-
-    # Generate doc_id immediately (same logic as add_document)
+    # Generate doc_id immediately
     doc_id = _hash(title + name)
 
-    # Schedule embedding generation in background
-    background_tasks.add_task(process_embeddings_background, title, name, text)
+    # Save file to disk (fast - <1 second)
+    file_extension = Path(name).suffix or ".pdf"
+    file_path = UPLOAD_DIR / f"{doc_id}{file_extension}"
 
-    # Return immediately with doc_id
+    try:
+        file_path.write_bytes(data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
+
+    # Schedule PDF extraction + embedding generation in background
+    background_tasks.add_task(process_pdf_background, doc_id, title, name, file_path)
+
+    # Return IMMEDIATELY (user gets instant feedback!)
     return {
         "ok": True,
         "doc_id": doc_id,
-        "page_count": page_count,
         "status": "processing",
-        "message": "Document uploaded. Embeddings are being generated in the background."
+        "message": "Upload complete. Processing document in background..."
     }

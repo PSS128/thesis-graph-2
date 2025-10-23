@@ -1,0 +1,57 @@
+Create a new file named project_explained.md that provides a clear, structured explanation of the entire project’s architecture.
+
+The file should:
+
+Explain the purpose of every folder in the repository, including both backend and frontend directories.
+
+Describe what type of files each folder contains (e.g., routes, services, components, utilities).
+
+Summarize how each folder contributes to the overall system.
+
+Explain the role of each key file, especially:
+
+Main entry points (main.py, page.tsx, etc.)
+
+Configuration and environment files (.env, db.py, etc.)
+
+Functional modules (e.g., compose.py, extract.py, edges.py, ingest.py, retrieve.py, etc.).
+
+Database files (thesis_graph.db) and what kind of data they store or manage.
+
+Clarify backend logic flow:
+
+How requests flow through the FastAPI routes.
+
+How the LLM service (llm.py) is used in routes like /compose or /edges/suggest.
+
+The relationship between data ingestion, storage, retrieval, and essay composition.
+
+Clarify frontend architecture:
+
+Describe what happens on the user interface side in page.tsx.
+
+Explain how the frontend communicates with backend endpoints.
+
+Include how graph data (nodes, edges, thesis) is displayed and updated.
+
+Summarize dependencies and environment variables:
+
+List what external APIs or models are used (e.g., OpenAI, Groq).
+
+Explain what each environment variable in .env does.
+
+Include a short project overview at the top summarizing:
+
+The project’s purpose (e.g., “The Thesis Graph app allows users to visualize, extract, and compose structured essays from argument graphs using LLMs”).
+
+The general workflow: Ingest → Extract → Edit → Compose.
+
+Tech stack (FastAPI backend, Next.js frontend, SQLite DB, LLM integrations).
+
+Format expectations:
+
+Use Markdown headings and subheadings (##, ###, etc.) for structure.
+
+Keep explanations concise but complete.
+
+Add bullet points for readability and code block examples where relevant.
