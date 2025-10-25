@@ -1,0 +1,162 @@
+Add User Authentication with JWT (Simple Auth)                                                                │ 
+     │                                                                                                               │ 
+     │ Overview                                                                                                      │ 
+     │                                                                                                               │ 
+     │ Implement user login/logout system where each user only sees their own projects and data. Use JWT tokens for  │ 
+     │ session management.                                                                                           │ 
+     │                                                                                                               │ 
+     │ Configuration Chosen                                                                                          │ 
+     │                                                                                                               │ 
+     │ - Auth method: Simple JWT (email + password)                                                                  │ 
+     │ - Existing data: Assign to default user                                                                       │ 
+     │ - User info: Email + password only                                                                            │ 
+     │ - Password reset: Not needed                                                                                  │ 
+     │ - Frontend: Provide React/Next.js components                                                                  │ 
+     │                                                                                                               │ 
+     │ ---                                                                                                           │ 
+     │ Backend Changes                                                                                               │ 
+     │                                                                                                               │ 
+     │ 1. Install Dependencies                                                                                       │ 
+     │                                                                                                               │ 
+     │ Add to backend/requirements.txt:                                                                              │ 
+     │ - python-jose[cryptography] (JWT tokens)                                                                      │ 
+     │ - passlib[bcrypt] (password hashing)                                                                          │ 
+     │ - python-multipart (form data)                                                                                │ 
+     │                                                                                                               │ 
+     │ 2. Create User Model (backend/app/models/store.py)                                                            │ 
+     │                                                                                                               │ 
+     │ - Add User table: id, email (unique), hashed_password, created_at, is_active                                  │ 
+     │ - Update Project table: add user_id foreign key                                                               │ 
+     │ - Update Feedback table: add user_id (optional, for analytics)                                                │ 
+     │                                                                                                               │ 
+     │ 3. Create Auth Dependencies (backend/app/dependencies/auth.py - NEW)                                          │ 
+     │                                                                                                               │ 
+     │ - hash_password() - bcrypt hashing                                                                            │ 
+     │ - verify_password() - check password                                                                          │ 
+     │ - create_access_token() - generate JWT                                                                        │ 
+     │ - get_current_user() - verify token, return User                                                              │ 
+     │ - Secret key configuration from environment                                                                   │ 
+     │                                                                                                               │ 
+     │ 4. Create Auth Router (backend/app/routers/auth.py - NEW)                                                     │
+     │                                                                                                               │ 
+     │ - POST /auth/register - Create account (email, password)                                                      │ 
+     │ - POST /auth/login - Login (returns JWT token)                                                                │ 
+     │ - GET /auth/me - Get current user info                                                                        │ 
+     │ - POST /auth/logout - Optional (client-side token deletion)                                                   │ 
+     │                                                                                                               │ 
+     │ 5. Update Projects Router (backend/app/routers/projects.py)                                                   │ 
+     │                                                                                                               │ 
+     │ - Add current_user: User = Depends(get_current_user) to all endpoints                                         │ 
+     │ - Filter queries by user_id:                                                                                  │ 
+     │   - list_projects() - only user's projects                                                                    │ 
+     │   - create_project() - set user_id automatically                                                              │ 
+     │   - load_project() - verify ownership                                                                         │ 
+     │   - save_project() - verify ownership                                                                         │ 
+     │   - delete_project() - verify ownership                                                                       │ 
+     │                                                                                                               │ 
+     │ 6. Update Main App (backend/app/main.py)                                                                      │ 
+     │                                                                                                               │ 
+     │ - Register auth router                                                                                        │ 
+     │ - Update CORS to allow Authorization header                                                                   │ 
+     │                                                                                                               │ 
+     │ 7. Database Migration Script (backend/migrations/add_users.py - NEW)                                          │ 
+     │                                                                                                               │ 
+     │ - Create User table                                                                                           │ 
+     │ - Insert default user (email: "default@localhost", password: "password123")                                   │ 
+     │ - Add user_id column to Project table (nullable temporarily)                                                  │ 
+     │ - Assign all existing projects to default user                                                                │ 
+     │ - Make user_id NOT NULL                                                                                       │ 
+     │ - Add foreign key constraint                                                                                  │ 
+     │                                                                                                               │ 
+     │ 8. Environment Configuration (backend/.env - NEW)                                                             │ 
+     │                                                                                                               │ 
+     │ - SECRET_KEY - random string for JWT signing                                                                  │ 
+     │ - ALGORITHM - HS256                                                                                           │ 
+     │ - ACCESS_TOKEN_EXPIRE_DAYS - 3                                                                                │ 
+     │                                                                                                               │ 
+     │ ---                                                                                                           │ 
+     │ Frontend Changes                                                                                              │ 
+     │                                                                                                               │ 
+     │ 9. Create Auth Context (frontend/src/contexts/AuthContext.tsx - NEW)                                          │ 
+     │                                                                                                               │ 
+     │ - Store JWT token in localStorage                                                                             │ 
+     │ - Store current user info                                                                                     │ 
+     │ - login(email, password) function                                                                             │ 
+     │ - logout() function                                                                                           │ 
+     │ - register(email, password) function                                                                          │ 
+     │ - Automatically add token to API requests                                                                     │ 
+     │                                                                                                               │ 
+     │ 10. Create Login Page (frontend/src/app/login/page.tsx - NEW)                                                 │ 
+     │                                                                                                               │ 
+     │ - Email + password form                                                                                       │ 
+     │ - Submit to POST /auth/login                                                                                  │ 
+     │ - Store token + redirect to dashboard                                                                         │ 
+     │ - Show errors (invalid credentials)                                                                           │ 
+     │                                                                                                               │ 
+     │ 11. Create Register Page (frontend/src/app/register/page.tsx - NEW)                                           │ 
+     │                                                                                                               │ 
+     │ - Email + password + confirm password form                                                                    │ 
+     │ - Submit to POST /auth/register                                                                               │ 
+     │ - Auto-login after registration                                                                               │ 
+     │ - Validation (email format, password strength)                                                                │ 
+     │                                                                                                               │ 
+     │ 12. Update Main App (frontend/src/app/page.tsx)                                                               │ 
+     │                                                                                                               │ 
+     │ - Wrap with AuthProvider                                                                                      │ 
+     │ - Check if user is logged in                                                                                  │ 
+     │ - Redirect to /login if not authenticated                                                                     │ 
+     │ - Show user email in navbar                                                                                   │ 
+     │ - Add logout button                                                                                           │ 
+     │                                                                                                               │ 
+     │ 13. Update API Client                                                                                         │ 
+     │                                                                                                               │ 
+     │ - Add Authorization header to all requests                                                                    │ 
+     │ - Handle 401 errors (redirect to login)                                                                       │ 
+     │ - Refresh token logic (optional)                                                                              │ 
+     │                                                                                                               │ 
+     │ ---                                                                                                           │ 
+     │ Testing Plan                                                                                                  │ 
+     │                                                                                                               │ 
+     │ Backend Tests                                                                                                 │ 
+     │                                                                                                               │ 
+     │ 1. Test user registration (duplicate email rejection)                                                         │ 
+     │ 2. Test login (valid/invalid credentials)                                                                     │ 
+     │ 3. Test protected endpoints (with/without token)                                                              │ 
+     │ 4. Test project isolation (user A can't see user B's projects)                                                │ 
+     │                                                                                                               │ 
+     │ Frontend Tests                                                                                                │ 
+     │                                                                                                               │ 
+     │ 1. Test login flow (success/error)                                                                            │ 
+     │ 2. Test registration flow                                                                                     │ 
+     │ 3. Test logout (clears token)                                                                                 │ 
+     │ 4. Test protected route redirect                                                                              │ 
+     │ 5. Test existing projects appear after migration                                                              │ 
+     │                                                                                                               │ 
+     │ ---                                                                                                           │ 
+     │ Files to Create (9 new files)                                                                                 │ 
+     │                                                                                                               │ 
+     │ - backend/requirements.txt (update)                                                                           │ 
+     │ - backend/.env (new)                                                                                          │ 
+     │ - backend/app/dependencies/auth.py (new)                                                                      │ 
+     │ - backend/app/routers/auth.py (new)                                                                           │ 
+     │ - backend/migrations/add_users.py (new)                                                                       │ 
+     │ - frontend/src/contexts/AuthContext.tsx (new)                                                                 │ 
+     │ - frontend/src/app/login/page.tsx (new)                                                                       │ 
+     │ - frontend/src/app/register/page.tsx (new)                                                                    │ 
+     │ - frontend/src/components/Navbar.tsx (new - optional)                                                         │ 
+     │                                                                                                               │ 
+     │ Files to Modify (4 files)                                                                                     │ 
+     │                                                                                                               │ 
+     │ - backend/app/models/store.py (add User, update Project)                                                      │ 
+     │ - backend/app/routers/projects.py (add auth checks)                                                           │ 
+     │ - backend/app/main.py (register auth router)                                                                  │ 
+     │ - frontend/src/app/page.tsx (wrap with AuthProvider)                                                          │ 
+     │                                                                                                               │ 
+     │ ---                                                                                                           │ 
+     │ Estimated Time: 6-8 hours                                                                                     │ 
+     │                                                                                                               │ 
+     │ 1. Backend setup (dependencies, models, auth logic): 2-3 hours                                                │ 
+     │ 2. Database migration: 30 min                                                                                 │ 
+     │ 3. Update routes with auth: 1-2 hours                                                                         │ 
+     │ 4. Frontend login/register UI: 2-3 hours                                                                      │ 
+     │ 5. Testing: 1 hour

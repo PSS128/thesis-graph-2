@@ -24,7 +24,8 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..db import get_session
-from ..models.store import Project, GraphNode, GraphEdge
+from ..models.store import Project, GraphNode, GraphEdge, User
+from ..dependencies.auth import get_current_user
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -78,6 +79,14 @@ class RenameProjectIn(BaseModel):
     title: str
 
 # ---------- Helpers ----------
+def _verify_project_ownership(project: Project, user: User) -> None:
+    """Verify that the user owns the project, raise 403 if not"""
+    if project.user_id != user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="You don't have permission to access this project"
+        )
+
 def _node_to_dict(n: GraphNode) -> dict:
     """Convert GraphNode to dict, supporting both old and new schema"""
     import json
@@ -118,28 +127,45 @@ def _edge_to_dict(e: GraphEdge) -> dict:
 
 # ---------- Routes ----------
 @router.get("", response_model=List[ProjectMeta])
-def list_projects(session: Session = Depends(get_session)):
-    rows = session.exec(select(Project).order_by(Project.id)).all()
+def list_projects(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """List all projects owned by the current user"""
+    rows = session.exec(
+        select(Project)
+        .where(Project.user_id == current_user.id)
+        .order_by(Project.id)
+    ).all()
     return [{"id": p.id, "title": p.title} for p in rows]
 
 @router.post("", response_model=ProjectMeta)
 def create_project(
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
     title: Optional[str] = Query(default=None),
     data: Optional[CreateProjectIn] = None,
 ):
+    """Create a new project owned by the current user"""
     final_title = title or (data.title if data else None) or "Untitled Project"
-    proj = Project(title=final_title)
+    proj = Project(title=final_title, user_id=current_user.id)
     session.add(proj)
     session.commit()
     session.refresh(proj)
     return {"id": proj.id, "title": proj.title}
 
 @router.get("/{project_id}", response_model=LoadResponse)
-def load_project(project_id: int, session: Session = Depends(get_session)):
+def load_project(
+    project_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """Load a project (only if owned by current user)"""
     proj = session.get(Project, project_id)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    _verify_project_ownership(proj, current_user)
 
     nodes = session.exec(
         select(GraphNode).where(GraphNode.project_id == project_id)
@@ -160,7 +186,9 @@ async def save_project(
     project_id: int,
     request: Request,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
 ):
+    """Save project nodes and edges (only if owned by current user)"""
     try:
         body = await request.json()
     except Exception:
@@ -174,6 +202,8 @@ async def save_project(
     proj = session.get(Project, project_id)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    _verify_project_ownership(proj, current_user)
 
     try:
         # wipe existing
@@ -247,10 +277,19 @@ async def save_project(
 
 # ---- Rename ----
 @router.patch("/{project_id}", response_model=ProjectMeta)
-def rename_project(project_id: int, data: RenameProjectIn, session: Session = Depends(get_session)):
+def rename_project(
+    project_id: int,
+    data: RenameProjectIn,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """Rename a project (only if owned by current user)"""
     proj = session.get(Project, project_id)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    _verify_project_ownership(proj, current_user)
+
     proj.title = data.title or proj.title
     session.add(proj)
     session.commit()
@@ -259,10 +298,18 @@ def rename_project(project_id: int, data: RenameProjectIn, session: Session = De
 
 # ---- Delete (cascade via Python-level deletes) ----
 @router.delete("/{project_id}")
-def delete_project(project_id: int, session: Session = Depends(get_session)):
+def delete_project(
+    project_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a project (only if owned by current user)"""
     proj = session.get(Project, project_id)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    _verify_project_ownership(proj, current_user)
+
     # delete children first
     for n in session.exec(select(GraphNode).where(GraphNode.project_id == project_id)).all():
         session.delete(n)
@@ -273,10 +320,17 @@ def delete_project(project_id: int, session: Session = Depends(get_session)):
     return {"ok": True, "deleted": project_id}
 
 @router.get("/{project_id}/export", response_model=ExportPayload)
-def export_project(project_id: int, session: Session = Depends(get_session)):
+def export_project(
+    project_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """Export a project as JSON (only if owned by current user)"""
     proj = session.get(Project, project_id)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    _verify_project_ownership(proj, current_user)
 
     nodes = session.exec(
         select(GraphNode).where(GraphNode.project_id == project_id)
@@ -292,9 +346,14 @@ def export_project(project_id: int, session: Session = Depends(get_session)):
     }
 
 @router.post("/import", response_model=ProjectMeta)
-def import_project(payload: ImportPayload, session: Session = Depends(get_session)):
+def import_project(
+    payload: ImportPayload,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """Import a project from JSON (creates new project owned by current user)"""
     title = (payload.project.title if payload.project else None) or "Imported Project"
-    proj = Project(title=title)
+    proj = Project(title=title, user_id=current_user.id)
     session.add(proj)
     session.commit()
     session.refresh(proj)

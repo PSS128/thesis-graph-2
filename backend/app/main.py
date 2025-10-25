@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Register all routers you already have:
 # extract, edges, ingest, retrieve, projects exist in your project
-from .routers import extract, edges, ingest, retrieve, projects, compose, debug
+from .routers import extract, edges, ingest, retrieve, projects, compose, debug, auth_endpoints
 from .routers import node as node_router
 from .routers import edge as edge_router
 from .routers import graph as graph_router
@@ -40,6 +40,7 @@ app.include_router(debug.router)    # <-- new
 app.include_router(node_router.router)
 app.include_router(edge_router.router)
 app.include_router(graph_router.router)
+app.include_router(auth_endpoints.router)
 
 @app.get("/")
 def read_root():

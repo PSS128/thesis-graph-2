@@ -1,0 +1,29 @@
+# Core FastAPI dependencies
+fastapi
+uvicorn[standard]
+sqlmodel
+pydantic
+
+# Database
+sqlalchemy
+
+# PDF processing
+pdfplumber
+
+# Vector embeddings
+sentence-transformers
+faiss-cpu
+numpy
+
+# LLM providers
+groq
+openai
+
+# Environment variables
+python-dotenv
+
+# Authentication (NEW - for user login/logout)
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+email-validator
