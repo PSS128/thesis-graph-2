@@ -15,6 +15,9 @@ import Toast, { ToastMessage } from './components/Toast'
 import HelpModal from './components/HelpModal'
 import { exportGraphAsPNG, exportGraphAsJSON, exportGraphAsMarkdown } from './utils/export'
 import { hierarchicalLayout, forceDirectedLayout, circularLayout, gridLayout, getOptimalPositionForNewNode } from './utils/graphLayout'
+import ProtectedRoute from './components/ProtectedRoute'
+import Navbar from './components/Navbar'
+import { useAuth } from './contexts/AuthContext'
 
 // ---------- Types ----------
 type CitationRef = {
@@ -109,6 +112,16 @@ function getEdgeStatus(e: EdgeT): string {
 // ================================================================
 export default function Home() {
   const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+  const { token } = useAuth()
+
+  // Helper function to make authenticated API calls
+  const authFetch = useCallback((url: string, options: RequestInit = {}) => {
+    const headers = new Headers(options.headers || {})
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`)
+    }
+    return fetch(url, { ...options, headers })
+  }, [token])
 
   // health + form
   const [msg, setMsg] = useState('loading...')
@@ -457,7 +470,7 @@ export default function Home() {
 
   // ---------------- Projects: list / create / save / load / rename / delete ----------------
   async function refreshProjects() {
-    const r = await fetch(`${API}/projects`)
+    const r = await authFetch(`${API}/projects`)
     if (r.ok) {
       const data: ProjectMeta[] = await r.json()
       setProjects(data)
@@ -481,7 +494,7 @@ export default function Home() {
       showToast('warning', 'No project selected.')
       return
     }
-    const r = await fetch(`${API}/projects/${projectId}`, {
+    const r = await authFetch(`${API}/projects/${projectId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: projectTitle || 'Untitled Project' })
@@ -497,7 +510,7 @@ export default function Home() {
       return
     }
     if (!confirm(`Delete project #${projectId}? This cannot be undone.`)) return
-    const r = await fetch(`${API}/projects/${projectId}`, { method: 'DELETE' })
+    const r = await authFetch(`${API}/projects/${projectId}`, { method: 'DELETE' })
     if (!r.ok) showToast('error', 'Delete failed'); return
     setProjectId(null)
     setProjectTitle('')
@@ -515,7 +528,7 @@ export default function Home() {
     setBusy('save')
     try {
       const payload = { nodes, edges }
-      const r = await fetch(`${API}/projects/${projectId}/save`, {
+      const r = await authFetch(`${API}/projects/${projectId}/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -539,7 +552,7 @@ export default function Home() {
     if (!projectId) return
     try {
       const payload = { nodes, edges }
-      const r = await fetch(`${API}/projects/${projectId}/save`, {
+      const r = await authFetch(`${API}/projects/${projectId}/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -554,7 +567,7 @@ export default function Home() {
   }
 
   async function loadProject(id: number) {
-    const r = await fetch(`${API}/projects/${id}`)
+    const r = await authFetch(`${API}/projects/${id}`)
     if (!r.ok) showToast('error', 'Load failed'); return
     const data = await r.json()
     setProjectId(data.project.id)
@@ -577,7 +590,7 @@ export default function Home() {
       showToast('warning', 'Create or select a project first.')
       return
     }
-    const r = await fetch(`${API}/projects/${projectId}/export`)
+    const r = await authFetch(`${API}/projects/${projectId}/export`)
     if (!r.ok) return alert(`Export failed: ${await r.text()}`)
     const data = await r.json()
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -663,7 +676,7 @@ export default function Home() {
   async function importProject(file: File) {
     try {
       const text = await file.text()
-      const r = await fetch(`${API}/projects/import`, {
+      const r = await authFetch(`${API}/projects/import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: text
@@ -1247,13 +1260,15 @@ export default function Home() {
   // UI
   // =====================================================
   return (
-    <main
-      style={{
-        padding: 24,
-        display: 'grid',
-        gap: 16,
-        maxWidth: 1100,
-        margin: '0 auto'
+    <ProtectedRoute>
+      <Navbar />
+      <main
+        style={{
+          padding: 24,
+          display: 'grid',
+          gap: 16,
+          maxWidth: 1100,
+          margin: '0 auto'
       }}
     >
       <h1>Thesis Graph</h1>
@@ -2248,5 +2263,6 @@ export default function Home() {
       {/* Help Modal */}
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
     </main>
+    </ProtectedRoute>
   )
 }

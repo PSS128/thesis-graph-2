@@ -58,15 +58,7 @@ Add User Authentication with JWT (Simple Auth)                                  
      │                                                                                                               │ 
      │ - Register auth router                                                                                        │ 
      │ - Update CORS to allow Authorization header                                                                   │ 
-     │                                                                                                               │ 
-     │ 7. Database Migration Script (backend/migrations/add_users.py - NEW)                                          │ 
-     │                                                                                                               │ 
-     │ - Create User table                                                                                           │ 
-     │ - Insert default user (email: "default@localhost", password: "password123")                                   │ 
-     │ - Add user_id column to Project table (nullable temporarily)                                                  │ 
-     │ - Assign all existing projects to default user                                                                │ 
-     │ - Make user_id NOT NULL                                                                                       │ 
-     │ - Add foreign key constraint                                                                                  │ 
+     │                                                                                                               │                                                                              │ 
      │                                                                                                               │ 
      │ 8. Environment Configuration (backend/.env - NEW)                                                             │ 
      │                                                                                                               │ 
