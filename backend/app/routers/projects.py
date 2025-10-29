@@ -32,8 +32,8 @@ logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 # ---------- Schemas ----------
-NodeType = Literal["THESIS", "CLAIM"]
-RelationType = Literal["SUPPORTS", "CONTRADICTS"]
+NodeType = Literal["THESIS", "CLAIM", "EVIDENCE", "VARIABLE"]
+RelationType = Literal["SUPPORTS", "CONTRADICTS", "DEFINES"]
 
 class ProjectMeta(BaseModel):
     id: int

@@ -14,7 +14,7 @@ router = APIRouter(prefix="/compose", tags=["compose"])
 class NodeIn(BaseModel):
     id: str
     text: str
-    type: Literal["THESIS", "CLAIM"]
+    type: Literal["THESIS", "CLAIM", "EVIDENCE", "VARIABLE"]
     x: Optional[float] = None
     y: Optional[float] = None
 
@@ -24,7 +24,7 @@ class EdgeIn(BaseModel):
     to_id: str
     # Support both old and new field names for backward compatibility
     type: Optional[Literal["CAUSES", "MODERATES", "MEDIATES", "CONTRADICTS"]] = None
-    relation: Optional[Literal["SUPPORTS", "CONTRADICTS"]] = None
+    relation: Optional[Literal["SUPPORTS", "CONTRADICTS", "DEFINES"]] = None
     # Additional fields from new schema
     status: Optional[str] = None
     mechanisms: Optional[List[str]] = None
@@ -52,6 +52,7 @@ class OutlineItem(BaseModel):
 class ComposeOut(BaseModel):
     outline: List[OutlineItem] = []
     essay_md: str = ""
+    essay_with_citations: str = ""
 
 
 # ---------- Route ----------
@@ -79,12 +80,13 @@ def compose(payload: ComposeIn, response: Response):
 
         outline = data.get("outline", [])
         essay_md = data.get("essay_md", "")
+        essay_with_citations = data.get("essay_with_citations", "")
 
         if payload.mode == "outline":
-            return ComposeOut(outline=outline, essay_md="")
+            return ComposeOut(outline=outline, essay_md="", essay_with_citations="")
         if payload.mode == "essay":
-            return ComposeOut(outline=[], essay_md=essay_md)
-        return ComposeOut(outline=outline, essay_md=essay_md)
+            return ComposeOut(outline=[], essay_md=essay_md, essay_with_citations=essay_with_citations)
+        return ComposeOut(outline=outline, essay_md=essay_md, essay_with_citations=essay_with_citations)
 
     except Exception as e:
         # Never crash the route; provide a small deterministic fallback
@@ -95,7 +97,7 @@ def compose(payload: ComposeIn, response: Response):
         heading = payload.thesis or "Argument Overview"
         pts = [n.text for n in payload.nodes][:5]
         essay_md = "## " + heading + "\n\n" + "\n\n".join(f"- {p}" for p in pts if p)
-        return ComposeOut(outline=[OutlineItem(heading=heading, points=pts)], essay_md=essay_md)
+        return ComposeOut(outline=[OutlineItem(heading=heading, points=pts)], essay_md=essay_md, essay_with_citations="")
 
 
 # Alias route used by the frontend: /compose/subgraph

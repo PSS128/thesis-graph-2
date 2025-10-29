@@ -221,17 +221,65 @@ def compose_outline_essay(
     if cached is not None:
         return cached, True  # Return cached result with used=True
 
+    # Separate nodes by type for better organization
+    claims = [n for n in nodes if n.get("type") == "CLAIM"]
+    evidence = [n for n in nodes if n.get("type") == "EVIDENCE"]
+    variables = [n for n in nodes if n.get("type") == "VARIABLE"]
+
+    # Build claim-evidence mapping from edges
+    claim_evidence_map = {}
+    for edge in edges:
+        if edge.get("relation") == "SUPPORTS":
+            from_id = edge.get("from_id")
+            to_id = edge.get("to_id")
+            # Find evidence and claim nodes
+            from_node = next((n for n in nodes if n.get("id") == from_id), None)
+            to_node = next((n for n in nodes if n.get("id") == to_id), None)
+
+            if from_node and to_node and from_node.get("type") == "EVIDENCE" and to_node.get("type") == "CLAIM":
+                if to_id not in claim_evidence_map:
+                    claim_evidence_map[to_id] = []
+                claim_evidence_map[to_id].append(from_node.get("text", ""))
+
+    # Build formatted strings
+    claims_text = "\n".join(f"- {c.get('text','').strip()}" for c in claims if c.get("text"))
+    evidence_text = "\n".join(f"- {e.get('text','').strip()}" for e in evidence if e.get("text"))
+    variables_text = "\n".join(f"- {v.get('text','').strip()}" for v in variables if v.get("text"))
+
+    # Build claim-evidence connections text
+    connections_text = ""
+    for claim_id, evidences in claim_evidence_map.items():
+        claim = next((c for c in claims if c.get("id") == claim_id), None)
+        if claim:
+            connections_text += f"\nClaim: {claim.get('text', '')}\n"
+            connections_text += "Evidence:\n"
+            for ev in evidences:
+                connections_text += f"  - {ev}\n"
+
     system_prompt = (
-        "You are a careful reasoning assistant. "
+        "You are a careful reasoning assistant that writes academic essays. "
+        "You will be provided with claims, evidence, and variables extracted from a text. "
         "Return STRICT JSON ONLY: {\"outline\":[{\"heading\":\"...\",\"points\":[\"...\"]}],"
-        "\"essay_md\":\"...\"}. No extra text."
+        "\"essay_md\":\"...\", \"essay_with_citations\":\"...\"}. No extra text."
     )
     user_prompt = (
         f"Thesis: {thesis or ''}\n\n"
-        f"Claims:\n{node_lines}\n\n"
-        f"Audience: {audience}\nTone: {tone}\nTargetWords: {words}\n"
-        "Write the outline (3–6 sections) and a concise markdown essay integrating the claims. "
-        "Return ONLY the strict JSON object."
+        f"Claims:\n{claims_text}\n\n"
+        f"Evidence:\n{evidence_text}\n\n"
+        f"Variables:\n{variables_text}\n\n"
+        f"Claim-Evidence Connections:\n{connections_text}\n\n"
+        f"Audience: {audience}\nTone: {tone}\nTargetWords: {words}\n\n"
+        "Write the outline (3–6 sections) and TWO versions of a concise markdown essay integrating the claims:\n"
+        "1. 'essay_md': Essay WITHOUT citations (clean narrative flow)\n"
+        "2. 'essay_with_citations': Essay WITH inline citations in the format [Evidence: ...] after each claim supported by evidence\n\n"
+        "For both essays:\n"
+        "- Integrate claims logically into a coherent narrative\n"
+        "- Include variables when discussing measurable concepts\n"
+        "- Use evidence to support claims where connections exist\n\n"
+        "For the essay with citations:\n"
+        "- Add [Evidence: <evidence text>] immediately after statements supported by evidence\n"
+        "- Keep citations concise but specific\n\n"
+        "Return ONLY the strict JSON object with 'outline', 'essay_md', and 'essay_with_citations' fields."
     )
 
     text, used = _chat(system_prompt, user_prompt, temperature=0.5, max_tokens=1800, json_mode=True)
@@ -239,6 +287,9 @@ def compose_outline_essay(
     # Prefer strict JSON
     data = _extract_json_strict(text) or _extract_json_relaxed(text) or {}
     if data.get("outline") and data.get("essay_md"):
+        # Ensure essay_with_citations exists (backwards compatibility)
+        if "essay_with_citations" not in data:
+            data["essay_with_citations"] = data.get("essay_md", "")
         # Cache successful result
         cache.set("llm_compose", data, *cache_key_data)
         return data, used
@@ -248,14 +299,14 @@ def compose_outline_essay(
         heading = thesis or "Argument Overview"
         pts = [n.get("text", "") for n in nodes][:5]
         outline = [{"heading": heading, "points": [p for p in pts if p]}]
-        return {"outline": outline, "essay_md": text}, True
+        return {"outline": outline, "essay_md": text, "essay_with_citations": text}, True
 
     # True deterministic fallback (no model used)
     heading = thesis or "Argument Overview"
     pts = [n.get("text", "") for n in nodes][:5]
     outline = [{"heading": heading, "points": [p for p in pts if p]}]
     essay_md = f"## {heading}\n\n" + "\n\n".join(f"- {p}" for p in pts if p)
-    return {"outline": outline, "essay_md": essay_md}, False
+    return {"outline": outline, "essay_md": essay_md, "essay_with_citations": ""}, False
 
 
 # ------------------------------------------------------------------

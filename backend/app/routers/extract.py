@@ -11,7 +11,7 @@ from ..services.llm import chat_json
 
 router = APIRouter(prefix="/extract", tags=["extract"])
 
-NodeType = Literal["THESIS", "CLAIM"]
+NodeType = Literal["THESIS", "CLAIM", "EVIDENCE", "VARIABLE"]
 
 
 # ---------- Schemas ----------
@@ -27,13 +27,27 @@ class NodeOut(BaseModel):
     type: NodeType
 
 
+class EdgeOut(BaseModel):
+    from_id: str
+    to_id: str
+    relation: str  # "SUPPORTS", "DEFINES", etc.
+
+
+class ExtractResponse(BaseModel):
+    nodes: List[NodeOut]
+    edges: List[EdgeOut]
+
+
 # ---------- Fallback (no LLM) ----------
-def _fallback_extract(text: str, thesis: Optional[str], max_items: int) -> List[NodeOut]:
+def _fallback_extract(text: str, thesis: Optional[str], max_items: int) -> ExtractResponse:
     nodes: List[NodeOut] = []
+    edges: List[EdgeOut] = []
     idx = 1
 
+    thesis_id = None
     if thesis:
-        nodes.append(NodeOut(id=f"n{idx}", type="THESIS", text=thesis.strip()))
+        thesis_id = f"n{idx}"
+        nodes.append(NodeOut(id=thesis_id, type="THESIS", text=thesis.strip()))
         idx += 1
 
     # naive sentence split
@@ -47,11 +61,18 @@ def _fallback_extract(text: str, thesis: Optional[str], max_items: int) -> List[
         if k in seen_texts:
             continue
         seen_texts.add(k)
-        nodes.append(NodeOut(id=f"n{idx}", type="CLAIM", text=s2))
+        claim_id = f"n{idx}"
+        nodes.append(NodeOut(id=claim_id, type="CLAIM", text=s2))
+
+        # If thesis exists, connect claims to it
+        if thesis_id:
+            edges.append(EdgeOut(from_id=claim_id, to_id=thesis_id, relation="SUPPORTS"))
+
         idx += 1
         if len(nodes) >= max_items:
             break
-    return nodes[:max_items]
+
+    return ExtractResponse(nodes=nodes[:max_items], edges=edges)
 
 
 # ---------- Helpers ----------
@@ -69,6 +90,7 @@ def _normalize_nodes(
       - ids are unique; repair invalid/duplicate ids to n1..nK
       - trim whitespace; drop empties
       - de-duplicate by (type,text) case-insensitively
+      - supports THESIS, CLAIM, EVIDENCE, VARIABLE types
     """
     out: List[NodeOut] = []
     seen_text_type = set()
@@ -92,7 +114,7 @@ def _normalize_nodes(
             break
         _text = (n.get("text") or "").strip()
         _type = (n.get("type") or "CLAIM").strip().upper()
-        if not _text or _type not in ("THESIS", "CLAIM"):
+        if not _text or _type not in ("THESIS", "CLAIM", "EVIDENCE", "VARIABLE"):
             continue
 
         # Enforce single THESIS
@@ -118,16 +140,85 @@ def _normalize_nodes(
     return out[:max_items]
 
 
+def _normalize_edges(
+    raw_edges: List[dict],
+    valid_node_ids: set[str],
+) -> List[EdgeOut]:
+    """
+    Validate & clean edges:
+      - both from_id and to_id must exist in valid_node_ids
+      - trim whitespace; drop invalid
+      - de-duplicate
+    """
+    out: List[EdgeOut] = []
+    seen_edges = set()
+
+    for e in raw_edges or []:
+        from_id = (e.get("from_id") or "").strip()
+        to_id = (e.get("to_id") or "").strip()
+        relation = (e.get("relation") or "SUPPORTS").strip().upper()
+
+        # Validate node IDs exist
+        if not from_id or not to_id:
+            continue
+        if from_id not in valid_node_ids or to_id not in valid_node_ids:
+            continue
+
+        # De-duplicate edges
+        edge_key = (from_id, to_id, relation)
+        if edge_key in seen_edges:
+            continue
+        seen_edges.add(edge_key)
+
+        out.append(EdgeOut(from_id=from_id, to_id=to_id, relation=relation))
+
+    return out
+
+
 # ---------- Route ----------
-@router.post("/nodes", response_model=List[NodeOut])
+@router.post("/nodes", response_model=ExtractResponse)
 def extract_nodes(req: ExtractRequest):
     print("[/extract/nodes] incoming", len(req.text or ""), "chars", "thesis?", bool(req.thesis))
 
     max_items = max(1, min(16, req.max_items or 8))
 
     system = (
-        "You extract atomic, self-contained claims from a passage. "
-        "Return STRICT JSON ONLY. No prose, no code fences."
+        "You are an information extraction model specializing in factual claim extraction. "
+        "Your task is to extract atomic, self-contained, verifiable claims, evidence, and variables from the given passage. "
+
+        "Node Types: "
+        "- CLAIM: A short, declarative statement that asserts something that can be evaluated as true or false. "
+        "- EVIDENCE: Specific data, quotes, statistics, or observations from the text that support a claim. "
+        "- VARIABLE: A measurable or observable concept mentioned in the text (e.g., 'GDP growth', 'temperature', 'customer satisfaction'). "
+        "- THESIS: The main argument or position (if provided). "
+
+        "Follow these strict principles: "
+
+        "Verifiability – Include only factual content that could be checked against external evidence. "
+        "Exclude opinions, recommendations, or normative statements (e.g., \"should,\" \"must,\" \"important,\" \"requires\"). "
+
+        "Entailment – Each claim must be fully supported by the source text. "
+        "Do not infer unstated details, merge facts from multiple sentences, or generalize beyond what is explicitly said. "
+
+        "Self-containment – Each claim must be understandable on its own, without needing additional context or references like \"they,\" \"this,\" or \"those.\" "
+        "Rewrite pronouns or vague terms to specify what they refer to. "
+
+        "Context preservation – Include all qualifiers or conditions that are critical for accurate interpretation. "
+        "For example, instead of \"The WTO has supported trade barriers,\" write \"The WTO has supported trade barriers when member countries failed to comply with obligations.\" "
+
+        "Evidence extraction – For each claim, identify specific evidence from the text that supports it. "
+        "Evidence should be direct quotes, data points, or specific observations from the source. "
+
+        "Variable identification – Extract measurable concepts or variables mentioned in the text and connect them to their supporting evidence. "
+
+        "Connections – Create edges that show relationships: "
+        "- SUPPORTS: Evidence supports a claim, or a claim supports the thesis. "
+        "- DEFINES: Evidence defines or measures a variable. "
+
+        "Completeness – Capture all verifiable information present in the text. "
+        "Avoid omitting causation, magnitude, or temporal qualifiers that change meaning. "
+
+        "Return output in STRICT JSON ONLY — no prose, no code fences."
     )
     user = f"""
 Text:
@@ -137,17 +228,26 @@ Thesis (optional):
 {req.thesis or ""}
 
 Instructions:
-- Extract up to {max_items} items.
+- Extract up to {max_items} items total (claims + evidence + variables).
 - If a thesis is provided, include exactly one node of type "THESIS" using that thesis text.
-- All other nodes must be type "CLAIM".
+- Extract CLAIM nodes for main assertions.
+- Extract EVIDENCE nodes for data, quotes, or specific facts that support claims.
+- Extract VARIABLE nodes for measurable concepts mentioned in the text.
+- Create edges to connect evidence to claims (SUPPORTS) and evidence to variables (DEFINES).
+- Use ids 'n1','n2','n3'... for nodes in order.
 - Create compact, non-overlapping statements.
-- Use ids 'n1','n2',... in order.
 
 Return strict JSON (no extra keys):
 {{
   "nodes":[
     {{"id":"n1","type":"THESIS","text":"..."}},
-    {{"id":"n2","type":"CLAIM","text":"..."}}
+    {{"id":"n2","type":"CLAIM","text":"..."}},
+    {{"id":"n3","type":"EVIDENCE","text":"..."}},
+    {{"id":"n4","type":"VARIABLE","text":"..."}}
+  ],
+  "edges":[
+    {{"from_id":"n3","to_id":"n2","relation":"SUPPORTS"}},
+    {{"from_id":"n3","to_id":"n4","relation":"DEFINES"}}
   ]
 }}
 """.strip()
@@ -156,9 +256,13 @@ Return strict JSON (no extra keys):
 
     # If model returned something, try to normalize/repair
     if data and isinstance(data.get("nodes"), list):
-        normalized = _normalize_nodes(data["nodes"], req.thesis, max_items)
-        if normalized:
-            return normalized
+        normalized_nodes = _normalize_nodes(data["nodes"], req.thesis, max_items)
+        if normalized_nodes:
+            # Get valid node IDs
+            valid_ids = {n.id for n in normalized_nodes}
+            # Normalize edges
+            normalized_edges = _normalize_edges(data.get("edges", []), valid_ids)
+            return ExtractResponse(nodes=normalized_nodes, edges=normalized_edges)
 
     # Fallback (deterministic)
     return _fallback_extract(req.text, req.thesis, max_items)

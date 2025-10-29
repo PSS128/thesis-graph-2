@@ -12,14 +12,14 @@ from ..services.llm import chat_json
 
 router = APIRouter(prefix="/edges", tags=["edges"])
 
-Relation = Literal["SUPPORTS", "CONTRADICTS"]
+Relation = Literal["SUPPORTS", "CONTRADICTS", "DEFINES"]
 
 
 # ---------- Schemas ----------
 class NodeIn(BaseModel):
     id: str
     text: str
-    type: Literal["THESIS", "CLAIM"]
+    type: Literal["THESIS", "CLAIM", "EVIDENCE", "VARIABLE"]
 
 
 class EdgeOut(BaseModel):
@@ -86,7 +86,10 @@ Claims:
 Instructions:
 - Propose up to {max_edges} edges.
 - Use only ids provided.
-- Relation must be either "SUPPORTS" or "CONTRADICTS".
+- Relation must be one of: "SUPPORTS", "CONTRADICTS", or "DEFINES".
+- "SUPPORTS": Evidence supports a claim, or a claim supports thesis
+- "CONTRADICTS": Claims that contradict each other
+- "DEFINES": Evidence that defines or measures a variable
 - Prefer clear, high-confidence links.
 - Do NOT include self-loops or duplicate edges.
 
@@ -94,7 +97,8 @@ Return strict JSON (no extra keys):
 {{
   "edges": [
     {{"from_id":"n2","to_id":"n5","relation":"SUPPORTS"}},
-    {{"from_id":"n3","to_id":"n1","relation":"CONTRADICTS"}}
+    {{"from_id":"n3","to_id":"n1","relation":"CONTRADICTS"}},
+    {{"from_id":"n4","to_id":"n6","relation":"DEFINES"}}
   ]
 }}
 """.strip()
@@ -126,7 +130,7 @@ def suggest_edges(req: SuggestRequest):
             rel = (e.get("relation") or "").strip().upper()
             if not a or not b or a == b or a not in id_set or b not in id_set:
                 continue
-            if rel not in ("SUPPORTS", "CONTRADICTS"):
+            if rel not in ("SUPPORTS", "CONTRADICTS", "DEFINES"):
                 continue
             out.append(EdgeOut(from_id=a, to_id=b, relation=rel))  # type: ignore
 

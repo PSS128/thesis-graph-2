@@ -152,3 +152,51 @@ Add User Authentication with JWT (Simple Auth)                                  
      │ 3. Update routes with auth: 1-2 hours                                                                         │ 
      │ 4. Frontend login/register UI: 2-3 hours                                                                      │ 
      │ 5. Testing: 1 hour
+
+
+
+
+
+
+      | #   | Prompt Name                | File Location              | Endpoint                      | Purpose
+                                  | Integration Status           |
+  |-----|----------------------------|----------------------------|-------------------------------|---------------    
+  --------------------------------|------------------------------|
+  | 1   | Node Extraction (Basic)    | routers/node.py:60-83      | POST /node/extract            | Extract single    
+   variable from text             | ✅ Active                     |
+  | 2   | Node Extraction (Advanced) | prompts/node_extraction.py | N/A                           | Domain-aware      
+  extraction with quality criteria | ⚠️ Available, not integrated |
+  | 3   | Thesis/Claim Extraction    | routers/extract.py:128-160 | POST /extract/nodes           | Extract
+  multiple claims from passage          | ✅ Active                     |
+  | 4   | Edge Suggestion            | routers/edges.py:72-102    | POST /edges/suggest           | Suggest
+  relationships between nodes           | ✅ Active                     |
+  | 5   | Edge Rationale (Basic)     | routers/edge.py:38-70      | POST /edge/rationale          | Generate
+  causal reasoning for edge            | ✅ Active                     |
+  | 6   | Edge Rationale (Advanced)  | prompts/edge_rationale.py  | N/A                           | Research-grade    
+   causal inference framework     | ⚠️ Available, not integrated |
+  | 7   | Edge Evidence              | routers/edge.py:97-121     | POST /edge/evidence           | Retrieve
+  citations for edge                   | ✅ Active                     |
+  | 8   | Composition                | services/llm.py:224-235    | POST /compose                 | Generate
+  outline and essay from graph         | ✅ Active                     |
+  | 9   | Missing Pieces             | routers/graph.py:117-159   | POST /graph/missing_pieces    | Suggest
+  missing variables and measurements    | ✅ Active                     |
+  | 10  | Mediator/Moderator Suggest | routers/graph.py:80-89     | POST /graph/suggest_mediators | Quick
+  suggestions for graph expansion         | ✅ Active                     |
+  | 11  | Graph Critique             | routers/graph.py:235-246   | POST /graph/critique          | Validate DAG      
+  structure and detect issues      | ✅ Active                     |
+
+
+
+
+
+I want the essay 
+
+Compose section should be structured nicely, right now it is just a list of sentences
+The markdown essay also lacks structure and is not appealing to look out. Please make sure that paragraphs are formatted with enough
+space in between them, there is proper punctuation, important text is highlighted (for claims) and bolded (for evidence)
+Sources below should be numbered
+Important/substantial text in citations and in essay that relate to claims and evidence should be bolded 
+Change color of evidence to brown
+Add a + evidence button in graph tools
+update the help document (make sure to explain what defines means in the graph)
+Change the placeholder text from (optional) thesis to (mandatory) thesis
