@@ -6,6 +6,7 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel
 
 from ..services import llm  # uses compose_outline_essay + PROVIDER/MODEL
+from ..prompts.version import get_version_header
 
 router = APIRouter(prefix="/compose", tags=["compose"])
 
@@ -77,6 +78,7 @@ def compose(payload: ComposeIn, response: Response):
 
         response.headers["X-LLM-Used"] = "1" if used else "0"
         response.headers["X-Model"] = f"{llm.PROVIDER}:{llm.MODEL}"
+        response.headers["X-Prompt-Version"] = get_version_header("composition")
 
         outline = data.get("outline", [])
         essay_md = data.get("essay_md", "")
@@ -93,6 +95,7 @@ def compose(payload: ComposeIn, response: Response):
         print(f"[/compose] ERROR: {e}")
         response.headers["X-LLM-Used"] = "0"
         response.headers["X-Model"] = f"{llm.PROVIDER}:{llm.MODEL}"
+        response.headers["X-Prompt-Version"] = get_version_header("composition")
 
         heading = payload.thesis or "Argument Overview"
         pts = [n.text for n in payload.nodes][:5]

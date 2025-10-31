@@ -11,14 +11,14 @@ type NodeT = {
   id: string
   // New schema fields
   name?: string
-  kind?: 'THESIS' | 'VARIABLE' | 'ASSUMPTION'
+  kind?: 'THESIS' | 'VARIABLE' | 'ASSUMPTION' | 'EVIDENCE' | 'CLAIM'
   definition?: string
   synonyms?: string[]
   measurement_ideas?: string[]
   citations?: NodeCitation[]
   // Legacy fields (for backward compatibility)
   text?: string
-  type?: 'THESIS' | 'CLAIM'
+  type?: 'THESIS' | 'CLAIM' | 'EVIDENCE' | 'VARIABLE'
   x?: number
   y?: number
 }
@@ -34,12 +34,12 @@ type EdgeT = {
   from_id: string
   to_id: string
   // New schema fields
-  type?: 'CAUSES' | 'MODERATES' | 'MEDIATES' | 'CONTRADICTS'
+  type?: 'CAUSES' | 'MODERATES' | 'MEDIATES' | 'CONTRADICTS' | 'DEFINES'
   status?: 'PROPOSED' | 'ACCEPTED' | 'REJECTED'
   citations?: EdgeCitation[]
   mechanisms?: string[]
   // Legacy fields (for backward compatibility)
-  relation?: 'SUPPORTS' | 'CONTRADICTS'
+  relation?: 'SUPPORTS' | 'CONTRADICTS' | 'DEFINES'
   rationale?: string
   confidence?: number
 }
@@ -406,6 +406,20 @@ export default function GraphCanvas({
           border: '#fa8c16',
           gradient: 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)',
           text: '#ad4e00'
+        }
+      case 'CLAIM':
+        return {
+          bg: '#f6ffed',
+          border: '#52c41a',
+          gradient: 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)',
+          text: '#389e0d'
+        }
+      case 'EVIDENCE':
+        return {
+          bg: '#fff2e8',
+          border: '#d4622a',
+          gradient: 'linear-gradient(135deg, #fff2e8 0%, #ffd8bf 100%)',
+          text: '#8c3d0f'
         }
       case 'VARIABLE':
         return {

@@ -102,11 +102,21 @@ export default function HelpModal({ onClose }: HelpModalProps) {
               🛠️ Graph Tools
             </h3>
             <div style={{ marginBottom: 16 }}>
+              <h4 style={{ fontSize: 14, color: '#262626', marginBottom: 8 }}>Node Types:</h4>
+              <ul style={{ margin: 0, paddingLeft: 20, color: '#595959' }}>
+                <li><strong>Thesis (Orange):</strong> Your main thesis statement or argument</li>
+                <li><strong>Claim (Green):</strong> Supporting claims or assertions that can be true/false</li>
+                <li><strong>Evidence (Brown):</strong> Data, quotes, statistics, or observations that support claims</li>
+                <li><strong>Variable (Blue):</strong> Measurable concepts mentioned in your research</li>
+              </ul>
+            </div>
+            <div style={{ marginBottom: 16 }}>
               <h4 style={{ fontSize: 14, color: '#262626', marginBottom: 8 }}>Adding Nodes:</h4>
               <ul style={{ margin: 0, paddingLeft: 20, color: '#595959' }}>
                 <li><strong>+ Thesis:</strong> Add your main thesis statement</li>
-                <li><strong>+ Claim:</strong> Add supporting claims or variables</li>
-                <li><strong>Extract from Text:</strong> Highlight text in a PDF and click "Extract" to create a node with AI assistance</li>
+                <li><strong>+ Claim:</strong> Add supporting claims</li>
+                <li><strong>+ Evidence:</strong> Add evidence nodes with data or quotes</li>
+                <li><strong>Extract from Text:</strong> Highlight text in a PDF and click "Extract" to create nodes with AI assistance</li>
               </ul>
             </div>
             <div style={{ marginBottom: 16 }}>
@@ -114,7 +124,12 @@ export default function HelpModal({ onClose }: HelpModalProps) {
               <ul style={{ margin: 0, paddingLeft: 20, color: '#595959' }}>
                 <li><strong>Edge Mode:</strong> Enable the checkbox, then click two nodes to connect them</li>
                 <li><strong>Shift+Drag:</strong> Hold Shift and drag from one node to another</li>
-                <li><strong>Relation Types:</strong> Choose SUPPORTS or CONTRADICTS from the dropdown</li>
+                <li><strong>Relation Types:</strong></li>
+                <ul style={{ marginTop: 4 }}>
+                  <li><strong>SUPPORTS:</strong> Evidence supports a claim, or a claim supports the thesis</li>
+                  <li><strong>CONTRADICTS:</strong> Claims that contradict each other</li>
+                  <li><strong>DEFINES:</strong> Evidence that defines or measures a variable</li>
+                </ul>
               </ul>
             </div>
             <div>

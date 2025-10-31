@@ -15,12 +15,58 @@ import os
 from dotenv import load_dotenv
 import json
 import re
+import time
 from typing import Any, Dict, List, Optional, Tuple
 from . import cache
+from ..prompts.version import PromptVersions, make_cache_key_with_version, get_version_header
 load_dotenv()
 
 # --- API keys ---
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+
+# ------------------------------------------------------------------
+# Metrics logging
+# ------------------------------------------------------------------
+def _log_llm_metrics(
+    prompt_type: str,
+    latency_ms: int,
+    success: bool,
+    cache_hit: bool = False,
+    error_message: Optional[str] = None,
+    input_tokens: Optional[int] = None,
+    output_tokens: Optional[int] = None,
+):
+    """
+    Log LLM API call metrics to database for monitoring and optimization.
+    This runs in a try-except to never block the main LLM flow.
+    """
+    try:
+        from ..models.store import LLMMetrics
+        from ..db import get_session
+
+        version = PromptVersions.get_version(prompt_type)
+
+        metric = LLMMetrics(
+            prompt_type=prompt_type,
+            prompt_version=version,
+            latency_ms=latency_ms,
+            success=success,
+            cache_hit=cache_hit,
+            error_message=error_message,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
+        # Get a database session and save
+        with next(get_session()) as session:
+            session.add(metric)
+            session.commit()
+
+    except Exception as e:
+        # Never crash the app due to metrics logging
+        print(f"[METRICS LOG ERROR] {e}")
+
 
 # ------------------------------------------------------------------
 # Provider config (env-driven)
@@ -150,6 +196,18 @@ def _extract_json_relaxed(text: str) -> Optional[Dict[str, Any]]:
     chunk = _relaxed_json_fixups(s[start:end+1])
     try:
         return json.loads(chunk)
+    except json.JSONDecodeError as e:
+        # Try one more time with strict escaping of control characters
+        print(f"[JSON PARSE ERROR] {_safe(e)} - Attempting control character fix")
+        try:
+            # Use json.loads with strict=False to be more lenient
+            import ast
+            # Try to fix by replacing unescaped newlines within string values
+            fixed_chunk = re.sub(r'("(?:[^"\\]|\\.)*")', lambda m: m.group(1).replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t'), chunk)
+            return json.loads(fixed_chunk, strict=False)
+        except Exception as e2:
+            print(f"[JSON PARSE ERROR FINAL] {_safe(e2)}\nTEXT: {text[:400]}")
+            return None
     except Exception as e:
         print(f"[JSON PARSE ERROR] {_safe(e)}\nTEXT: {text[:400]}")
         return None
@@ -160,42 +218,99 @@ def chat_json(
     user_prompt: str,
     temperature: float = 0.2,
     max_tokens: int = 1200,
+    prompt_type: str = "generic",  # For versioning: "node_extraction", "edge_rationale", etc.
 ) -> Optional[Dict[str, Any]]:
     """
     Ask for strict JSON and parse it. Returns dict or None.
     Uses OpenAI JSON mode when available to reduce parse failures.
     Caches responses for faster repeated queries.
+
+    prompt_type: Used for versioning in cache keys (optional, defaults to "generic")
     """
-    # Check cache first
-    cached = cache.get("llm_json", system_prompt, user_prompt, temperature, max_tokens, ttl=cache.LLM_CACHE_TTL)
+    start_time = time.time()
+
+    # Check cache first (with version in key)
+    cache_key_args = make_cache_key_with_version(prompt_type, system_prompt, user_prompt, temperature, max_tokens)
+    cached = cache.get(*cache_key_args, ttl=cache.LLM_CACHE_TTL)
     if cached is not None:
+        latency_ms = int((time.time() - start_time) * 1000)
+        # Log cache hit
+        _log_llm_metrics(prompt_type, latency_ms, success=True, cache_hit=True)
         return cached
 
     # Strengthen the instruction regardless of provider.
-    sys = (system_prompt or "") + "\nReturn ONLY a single valid JSON object. Start with '{' and end with '}'."
+    sys = (system_prompt or "") + "\n\nCRITICAL JSON FORMATTING:\n- Return ONLY a single valid JSON object\n- Start with '{' and end with '}'\n- NO newlines inside string values - use \\n for line breaks\n- Use escaped quotes for quotes inside strings: \\\"  \n- Ensure all JSON is on a single line or properly escaped"
     usr = user_prompt
 
     text, used = _chat(sys, usr, temperature=temperature, max_tokens=max_tokens, json_mode=True)
+    latency_ms = int((time.time() - start_time) * 1000)
+
     data = _extract_json_strict(text)
     if data is not None:
         # Cache successful result
-        cache.set("llm_json", data, system_prompt, user_prompt, temperature, max_tokens)
+        cache.set(data, *cache_key_args)
+        # Log successful LLM call
+        _log_llm_metrics(prompt_type, latency_ms, success=True, cache_hit=False)
         return data
 
     # Second chance with relaxed fixups (helps Groq or non-JSON-mode outputs)
     data = _extract_json_relaxed(text)
     if data is not None:
         # Cache successful result
-        cache.set("llm_json", data, system_prompt, user_prompt, temperature, max_tokens)
+        cache.set(data, *cache_key_args)
+        # Log successful LLM call (with parsing workaround)
+        _log_llm_metrics(prompt_type, latency_ms, success=True, cache_hit=False)
         return data
 
+    # Failed to parse JSON
     print("[chat_json] model did not return strict JSON; using None fallback.")
+    _log_llm_metrics(prompt_type, latency_ms, success=False, cache_hit=False,
+                     error_message="Failed to parse JSON response")
     return None
 
 
 # ------------------------------------------------------------------
 # Compose helper
 # ------------------------------------------------------------------
+def _validate_citation_format(essay_text: str) -> Tuple[bool, List[str]]:
+    """
+    Validate citation format in essay_with_citations.
+    Returns (is_valid, warnings_list).
+
+    Expected format: [Evidence: "quote text"]
+    Invalid formats: [1], (Author 2024), [Evidence 1], etc.
+    """
+    if not essay_text:
+        return True, []
+
+    warnings = []
+
+    # Check for correct format [Evidence: "..."]
+    correct_pattern = r'\[Evidence:\s*"[^"]+"\]'
+    correct_citations = re.findall(correct_pattern, essay_text)
+
+    # Check for common wrong formats
+    wrong_patterns = [
+        (r'\[\d+\]', 'numbered citations like [1]'),
+        (r'\([A-Z][a-z]+\s+\d{4}\)', 'author-year citations like (Smith 2024)'),
+        (r'\[Evidence\s+\d+\]', 'numbered evidence like [Evidence 1]'),
+        (r'\[Evidence:\s*[^"]+\](?!\s*")', 'evidence without quotes'),
+    ]
+
+    for pattern, description in wrong_patterns:
+        matches = re.findall(pattern, essay_text)
+        if matches:
+            warnings.append(f"Found {len(matches)} {description}: {matches[:3]}")
+
+    # Check if there are citations but none in correct format
+    has_brackets = '[' in essay_text and ']' in essay_text
+    if has_brackets and not correct_citations and not warnings:
+        warnings.append("Citations found but format unclear - expected [Evidence: \"quote\"]")
+
+    is_valid = len(warnings) == 0 or len(correct_citations) > 0
+    return is_valid, warnings
+
+
 def compose_outline_essay(
     thesis: Optional[str],
     nodes: List[Dict[str, Any]],
@@ -212,13 +327,17 @@ def compose_outline_essay(
       - If the model responded at all, we try to keep used=True, even if we salvage.
       - Only when we never reached a model (no creds/network fail) do we return used=False.
     """
-    # Create cache key from inputs
-    node_lines = "\n".join(f"- {n.get('text','').strip()}" for n in nodes if n.get("text"))
-    cache_key_data = (thesis, node_lines, words, audience, tone)
+    start_time = time.time()
 
-    # Check cache first
-    cached = cache.get("llm_compose", *cache_key_data, ttl=cache.LLM_CACHE_TTL)
+    # Create cache key from inputs (with version)
+    node_lines = "\n".join(f"- {n.get('text','').strip()}" for n in nodes if n.get("text"))
+    cache_key_args = make_cache_key_with_version("composition", thesis, node_lines, words, audience, tone)
+
+    # Check cache first (6 hour TTL for composition as it's semi-dynamic)
+    cached = cache.get(*cache_key_args, ttl=21600)  # 6 hours = 21600 seconds
     if cached is not None:
+        latency_ms = int((time.time() - start_time) * 1000)
+        _log_llm_metrics("composition", latency_ms, success=True, cache_hit=True)
         return cached, True  # Return cached result with used=True
 
     # Separate nodes by type for better organization
@@ -257,10 +376,9 @@ def compose_outline_essay(
                 connections_text += f"  - {ev}\n"
 
     system_prompt = (
-        "You are a careful reasoning assistant that writes academic essays. "
-        "You will be provided with claims, evidence, and variables extracted from a text. "
-        "Return STRICT JSON ONLY: {\"outline\":[{\"heading\":\"...\",\"points\":[\"...\"]}],"
-        "\"essay_md\":\"...\", \"essay_with_citations\":\"...\"}. No extra text."
+        "You are an expert academic writer that produces clear, concise, evidence-based essays. "
+        "Return STRICT JSON ONLY with three fields: outline, essay_md, essay_with_citations. "
+        "No extra text, no markdown code fences, just pure JSON."
     )
     user_prompt = (
         f"Thesis: {thesis or ''}\n\n"
@@ -268,21 +386,49 @@ def compose_outline_essay(
         f"Evidence:\n{evidence_text}\n\n"
         f"Variables:\n{variables_text}\n\n"
         f"Claim-Evidence Connections:\n{connections_text}\n\n"
-        f"Audience: {audience}\nTone: {tone}\nTargetWords: {words}\n\n"
-        "Write the outline (3–6 sections) and TWO versions of a concise markdown essay integrating the claims:\n"
-        "1. 'essay_md': Essay WITHOUT citations (clean narrative flow)\n"
-        "2. 'essay_with_citations': Essay WITH inline citations in the format [Evidence: ...] after each claim supported by evidence\n\n"
-        "For both essays:\n"
-        "- Integrate claims logically into a coherent narrative\n"
-        "- Include variables when discussing measurable concepts\n"
-        "- Use evidence to support claims where connections exist\n\n"
-        "For the essay with citations:\n"
-        "- Add [Evidence: <evidence text>] immediately after statements supported by evidence\n"
-        "- Keep citations concise but specific\n\n"
-        "Return ONLY the strict JSON object with 'outline', 'essay_md', and 'essay_with_citations' fields."
+        f"Audience: {audience} | Tone: {tone} | Target Words: {words}\n\n"
+        "TASK: Write an outline and TWO essay versions.\n\n"
+        "CRITICAL REQUIREMENTS:\n"
+        "1. NO REPETITION: Each piece of evidence and each claim should appear ONLY ONCE in the essay\n"
+        "2. UNIQUE CONTENT: If a claim or evidence is mentioned, do not restate it in different words\n"
+        "3. MARKDOWN STRUCTURE:\n"
+        "   - Use ## for ALL section headings (Introduction, Body sections, Conclusion, Limitations & Counterarguments)\n"
+        "   - Use blank lines between ALL paragraphs\n"
+        "   - Each paragraph: 3-5 sentences\n"
+        "4. CONTENT FLOW:\n"
+        "   - Introduction: Present thesis clearly without evidence\n"
+        "   - Body: Group related claims by theme, each with supporting evidence\n"
+        "   - Limitations & Counterarguments: Acknowledge alternative explanations, confounding variables, gaps in evidence\n"
+        "   - Conclusion: Synthesize main points WITHOUT repeating evidence\n"
+        "5. TRANSITIONS: Use smooth transitions between paragraphs and sections\n\n"
+        "TWO SEPARATE ESSAY FIELDS (IMPORTANT - WRITE EACH ESSAY ONLY ONCE):\n\n"
+        "Field 'essay_md' - Clean version:\n"
+        "   - Write the complete essay WITHOUT any citations\n"
+        "   - Just flowing narrative text\n"
+        "   - Use **bold** for key points and *italics* for claims\n"
+        "   - Write this essay ONCE in the essay_md field\n\n"
+        "Field 'essay_with_citations' - Version with evidence:\n"
+        "   - Start fresh - write the SAME essay again\n"
+        "   - This time ADD citations in this EXACT format: [Evidence: \"direct quote\"]\n"
+        "   - CRITICAL CITATION FORMAT RULES:\n"
+        "     ✓ CORRECT: [Evidence: \"GDP growth accelerated in Q3\"]\n"
+        "     ✓ CORRECT: [Evidence: \"4-day workweek reduced burnout by 23%\"]\n"
+        "     ✗ WRONG: [1] or (Smith 2024) or [Evidence 1] or any other format\n"
+        "   - Keep citations brief (max 15 words of quoted text)\n"
+        "   - Place citations immediately after the sentence they support\n"
+        "   - Write this essay ONCE in the essay_with_citations field\n\n"
+        "CRITICAL: Each field should contain ONE complete essay, not repeated content!\n\n"
+        "CITATION FORMAT EXAMPLES:\n"
+        "- Studies show burnout decreased significantly [Evidence: \"employees reported 40% less emotional exhaustion\"].\n"
+        "- Economic growth accelerated [Evidence: \"GDP rose 3.2% in the fourth quarter\"] during this period.\n"
+        "- Performance improved across metrics [Evidence: \"productivity increased while maintaining output quality\"].\n\n"
+        "OUTPUT FORMAT:\n"
+        '{{"outline":[...], "essay_md":"<WRITE CLEAN ESSAY HERE>", "essay_with_citations":"<WRITE CITED ESSAY HERE>"}}\n\n'
+        "DO NOT write the essay twice in the same field!"
     )
 
-    text, used = _chat(system_prompt, user_prompt, temperature=0.5, max_tokens=1800, json_mode=True)
+    text, used = _chat(system_prompt, user_prompt, temperature=0.5, max_tokens=2500, json_mode=True)
+    latency_ms = int((time.time() - start_time) * 1000)
 
     # Prefer strict JSON
     data = _extract_json_strict(text) or _extract_json_relaxed(text) or {}
@@ -290,8 +436,19 @@ def compose_outline_essay(
         # Ensure essay_with_citations exists (backwards compatibility)
         if "essay_with_citations" not in data:
             data["essay_with_citations"] = data.get("essay_md", "")
+
+        # Validate citation format
+        essay_with_citations = data.get("essay_with_citations", "")
+        is_valid, warnings = _validate_citation_format(essay_with_citations)
+        if warnings:
+            print(f"[CITATION FORMAT WARNING] {'; '.join(warnings)}")
+            # Add warnings to metadata (optional - could be exposed to frontend)
+            data["_citation_warnings"] = warnings
+
         # Cache successful result
-        cache.set("llm_compose", data, *cache_key_data)
+        cache.set(data, *cache_key_args)
+        # Log successful composition
+        _log_llm_metrics("composition", latency_ms, success=True, cache_hit=False)
         return data, used
 
     # Salvage the model text if we got any — keep used=True so the badge flips on.
@@ -299,6 +456,9 @@ def compose_outline_essay(
         heading = thesis or "Argument Overview"
         pts = [n.get("text", "") for n in nodes][:5]
         outline = [{"heading": heading, "points": [p for p in pts if p]}]
+        # Log partial success (salvaged result)
+        _log_llm_metrics("composition", latency_ms, success=True, cache_hit=False,
+                        error_message="Salvaged result - JSON parsing failed")
         return {"outline": outline, "essay_md": text, "essay_with_citations": text}, True
 
     # True deterministic fallback (no model used)
@@ -306,6 +466,9 @@ def compose_outline_essay(
     pts = [n.get("text", "") for n in nodes][:5]
     outline = [{"heading": heading, "points": [p for p in pts if p]}]
     essay_md = f"## {heading}\n\n" + "\n\n".join(f"- {p}" for p in pts if p)
+    # Log fallback (LLM unavailable)
+    _log_llm_metrics("composition", latency_ms, success=False, cache_hit=False,
+                    error_message="LLM unavailable or failed")
     return {"outline": outline, "essay_md": essay_md, "essay_with_citations": ""}, False
 
 

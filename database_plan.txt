@@ -189,7 +189,7 @@ Add User Authentication with JWT (Simple Auth)                                  
 
 
 
-I want the essay 
+Make the following edits:
 
 Compose section should be structured nicely, right now it is just a list of sentences
 The markdown essay also lacks structure and is not appealing to look out. Please make sure that paragraphs are formatted with enough

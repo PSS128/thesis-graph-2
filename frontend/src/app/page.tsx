@@ -29,7 +29,7 @@ type NodeT = {
   id: string
   // New schema fields
   name?: string
-  kind?: 'THESIS' | 'VARIABLE' | 'ASSUMPTION'
+  kind?: 'THESIS' | 'VARIABLE' | 'ASSUMPTION' | 'EVIDENCE' | 'CLAIM'
   definition?: string
   rationale?: string
   synonyms?: string[]
@@ -37,7 +37,7 @@ type NodeT = {
   citations?: CitationRef[]
   // Legacy fields (for backward compatibility)
   text?: string
-  type?: 'THESIS' | 'CLAIM'
+  type?: 'THESIS' | 'CLAIM' | 'EVIDENCE' | 'VARIABLE'
   x?: number
   y?: number
 }
@@ -53,14 +53,14 @@ type EdgeT = {
   from_id: string
   to_id: string
   // New schema fields
-  type?: 'CAUSES' | 'MODERATES' | 'MEDIATES' | 'CONTRADICTS'
+  type?: 'CAUSES' | 'MODERATES' | 'MEDIATES' | 'CONTRADICTS' | 'DEFINES'
   status?: 'PROPOSED' | 'ACCEPTED' | 'REJECTED'
   mechanisms?: string[]
   assumptions?: string[]
   confounders?: string[]
   citations?: EdgeCitation[]
   // Legacy fields (for backward compatibility)
-  relation?: 'SUPPORTS' | 'CONTRADICTS'
+  relation?: 'SUPPORTS' | 'CONTRADICTS' | 'DEFINES'
   rationale?: string
   confidence?: number
 }
@@ -181,6 +181,8 @@ export default function Home() {
   const [selected, setSelected] = useState<Record<string, boolean>>({})
   const [outline, setOutline] = useState<{ heading: string; points: string[] }[]>([])
   const [essay, setEssay] = useState<string>('')
+  const [essayWithCitations, setEssayWithCitations] = useState<string>('')
+  const [showCitations, setShowCitations] = useState<boolean>(false)
   const [llmUsed, setLlmUsed] = useState<boolean | null>(null)
 
   // Autosave
@@ -199,7 +201,7 @@ export default function Home() {
 
   // interactive graph editing
   const [edgeMode, setEdgeMode] = useState<boolean>(false)
-  const [newEdgeRelation, setNewEdgeRelation] = useState<'SUPPORTS' | 'CONTRADICTS'>('SUPPORTS')
+  const [newEdgeRelation, setNewEdgeRelation] = useState<'SUPPORTS' | 'CONTRADICTS' | 'DEFINES'>('SUPPORTS')
 
   // edge rationale modal state
   type PendingEdge = {
@@ -346,6 +348,7 @@ export default function Home() {
     setSelected({})
     setOutline([])
     setEssay('')
+    setEssayWithCitations('')
     setReferences([])
     try {
       const res = await fetch(`${API}/extract/nodes`, {
@@ -515,7 +518,7 @@ export default function Home() {
     setProjectId(null)
     setProjectTitle('')
     setNodes([]); setEdges([]); setCitations({}); setSelected({})
-    setOutline([]); setEssay(''); setReferences([])
+    setOutline([]); setEssay(''); setEssayWithCitations(''); setReferences([])
     await refreshProjects()
     showToast('success', 'Project deleted successfully')
   }
@@ -578,6 +581,7 @@ export default function Home() {
     setSelected({})
     setOutline([])
     setEssay('')
+    setEssayWithCitations('')
     setReferences([])
     setDirty(false)
     setLastSaved(null)
@@ -762,6 +766,7 @@ export default function Home() {
     const data = await r.json()
     setOutline(data.outline || [])
     setEssay(data.essay_md || '')
+    setEssayWithCitations(data.essay_with_citations || '')
     setTimeout(
       () => document.getElementById('compose-result')?.scrollIntoView({ behavior: 'smooth' }),
       50
@@ -869,17 +874,44 @@ export default function Home() {
   }
 
   // --- NEW: Add node / edge helpers ---
-  function addNode(kind: 'THESIS' | 'CLAIM') {
+  function addNode(kind: 'THESIS' | 'CLAIM' | 'EVIDENCE' | 'VARIABLE') {
     const id = `N${Math.random().toString(36).slice(2, 7)}`
-    const label = kind === 'THESIS' ? 'New thesis' : 'New claim'
-    const nodeKind = kind === 'THESIS' ? 'THESIS' : 'VARIABLE'
+    let label = 'New node'
+    let nodeKind = kind
+
+    switch (kind) {
+      case 'THESIS':
+        label = 'New thesis'
+        nodeKind = 'THESIS'
+        break
+      case 'CLAIM':
+        label = 'New claim'
+        nodeKind = 'VARIABLE'
+        break
+      case 'EVIDENCE':
+        label = 'New evidence'
+        nodeKind = 'EVIDENCE'
+        break
+      case 'VARIABLE':
+        label = 'New variable'
+        nodeKind = 'VARIABLE'
+        break
+    }
+
     setNodes((prev) => [...prev, { id, name: label, kind: nodeKind, text: label, type: kind }])
     setSelected((prev) => ({ ...prev, [id]: true }))
   }
 
   async function createEdge(from_id: string, to_id: string) {
     if (from_id === to_id) return
-    const edgeType = newEdgeRelation === 'SUPPORTS' ? 'CAUSES' : 'CONTRADICTS'
+    let edgeType: string
+    if (newEdgeRelation === 'SUPPORTS') {
+      edgeType = 'CAUSES'
+    } else if (newEdgeRelation === 'DEFINES') {
+      edgeType = 'DEFINES'
+    } else {
+      edgeType = 'CONTRADICTS'
+    }
     const exists = edges.some(
       (e) => e.from_id === from_id && e.to_id === to_id && getEdgeType(e) === edgeType
     )
@@ -1590,7 +1622,7 @@ export default function Home() {
 
       {/* Inputs */}
       <input
-        placeholder="(Optional) Thesis"
+        placeholder="(Mandatory) Thesis"
         value={thesis}
         onChange={(e) => setThesis(e.target.value)}
         style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }}
@@ -1724,6 +1756,13 @@ export default function Home() {
         >
           + Claim
         </button>
+        <button
+          onClick={() => addNode('EVIDENCE')}
+          style={{ padding: '6px 10px', border: '1px solid #333', borderRadius: 6 }}
+          title="Add an evidence node"
+        >
+          + Evidence
+        </button>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 12 }}>
           <input
@@ -1744,11 +1783,12 @@ export default function Home() {
           Relation:{' '}
           <select
             value={newEdgeRelation}
-            onChange={(e) => setNewEdgeRelation(e.target.value as 'SUPPORTS' | 'CONTRADICTS')}
+            onChange={(e) => setNewEdgeRelation(e.target.value as 'SUPPORTS' | 'CONTRADICTS' | 'DEFINES')}
             disabled={!edgeMode}
           >
             <option value="SUPPORTS">SUPPORTS</option>
             <option value="CONTRADICTS">CONTRADICTS</option>
+            <option value="DEFINES">DEFINES</option>
           </select>
         </label>
 
@@ -2088,37 +2128,129 @@ export default function Home() {
         </div>
 
         {outline.length ? (
-          <div>
-            <h3>Outline</h3>
-            <ol>
+          <details style={{ marginBottom: 24, padding: 16, border: '1px solid #e0e0e0', borderRadius: 8, background: '#f9f9f9' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 16, marginBottom: 12 }}>
+              📋 Outline (click to expand)
+            </summary>
+            <ol style={{ paddingLeft: 20, marginTop: 12 }}>
               {outline.map((o, i) => (
-                <li key={i}>
+                <li key={i} style={{ marginBottom: 12 }}>
                   <strong>{o.heading}</strong>
-                  <ul>
+                  <ul style={{ marginTop: 6 }}>
                     {o.points.map((p, j) => (
-                      <li key={j}>{p}</li>
+                      <li key={j} style={{ marginBottom: 4, color: '#555' }}>{p}</li>
                     ))}
                   </ul>
                 </li>
               ))}
             </ol>
-          </div>
+          </details>
         ) : null}
 
         {essay ? (
           <div>
-            <h3>Essay (Markdown)</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h3 style={{ margin: 0 }}>Essay</h3>
+              {essayWithCitations && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button
+                    onClick={() => setShowCitations(false)}
+                    style={{
+                      padding: '6px 12px',
+                      border: showCitations ? '1px solid #ddd' : '2px solid #1890ff',
+                      borderRadius: 6,
+                      background: showCitations ? '#fff' : '#e6f7ff',
+                      color: showCitations ? '#666' : '#1890ff',
+                      fontWeight: showCitations ? 'normal' : 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Clean Version
+                  </button>
+                  <button
+                    onClick={() => setShowCitations(true)}
+                    style={{
+                      padding: '6px 12px',
+                      border: showCitations ? '2px solid #1890ff' : '1px solid #ddd',
+                      borderRadius: 6,
+                      background: showCitations ? '#e6f7ff' : '#fff',
+                      color: showCitations ? '#1890ff' : '#666',
+                      fontWeight: showCitations ? 600 : 'normal',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    With Citations
+                  </button>
+                </div>
+              )}
+            </div>
             <div
               style={{
                 width: '100%',
-                padding: 16,
+                padding: '32px 40px',
                 border: '1px solid #ddd',
                 borderRadius: 8,
-                background: '#fff'
+                background: '#fff',
+                lineHeight: 1.8,
+                fontSize: 16,
+                color: '#333',
+                maxWidth: 900,
+                margin: '0 auto'
               }}
             >
-              <ReactMarkdown>{essay}</ReactMarkdown>
+              <style jsx global>{`
+                .essay-content h2 {
+                  font-size: 1.5rem;
+                  font-weight: 600;
+                  margin-top: 2rem;
+                  margin-bottom: 1rem;
+                  color: #1a1a1a;
+                  border-bottom: 2px solid #e0e0e0;
+                  padding-bottom: 0.5rem;
+                }
+                .essay-content h2:first-of-type {
+                  margin-top: 0;
+                }
+                .essay-content p {
+                  margin-bottom: 1.5rem;
+                  text-align: justify;
+                  text-indent: 2rem;
+                }
+                .essay-content strong {
+                  color: #8c3d0f;
+                  font-weight: 600;
+                }
+                .essay-content em {
+                  color: #2c5e1a;
+                  font-style: italic;
+                }
+              `}</style>
+              <div className="essay-content">
+                <ReactMarkdown>{showCitations && essayWithCitations ? essayWithCitations : essay}</ReactMarkdown>
+              </div>
             </div>
+
+            {/* Evidence Sources Section */}
+            {(() => {
+              const evidenceNodes = nodes.filter(n =>
+                (n.type === 'EVIDENCE' || n.kind === 'EVIDENCE') && selected[n.id]
+              )
+
+              if (evidenceNodes.length === 0) return null
+
+              return (
+                <div style={{ marginTop: 24 }}>
+                  <h3>Sources</h3>
+                  <ol style={{ paddingLeft: 20 }}>
+                    {evidenceNodes.map((node, idx) => (
+                      <li key={node.id} style={{ marginBottom: 8 }}>
+                        <span style={{ color: '#8c3d0f' }}>{node.text || node.name}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )
+            })()}
           </div>
         ) : null}
 

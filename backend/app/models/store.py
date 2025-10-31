@@ -86,3 +86,23 @@ class Feedback(SQLModel, table=True):
     rating: int  # +1 or -1
     comment: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# --- LLM Metrics model --------------------------------------------------------
+# Tracks LLM API call performance for monitoring and optimization
+# prompt_type: "node_extraction" | "edge_rationale" | "composition" | "evidence"
+# prompt_version: Version string from prompts/version.py
+# latency_ms: Time taken for LLM call in milliseconds
+# success: Whether the call completed successfully
+# cache_hit: Whether result was served from cache
+class LLMMetrics(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    prompt_type: str = Field(index=True)  # For filtering by operation type
+    prompt_version: str  # Track performance by prompt version
+    latency_ms: int  # Response time in milliseconds
+    success: bool  # True if LLM responded, False if error/fallback
+    input_tokens: Optional[int] = None  # Tokens in request (if available from provider)
+    output_tokens: Optional[int] = None  # Tokens in response (if available from provider)
+    cache_hit: bool = False  # True if served from cache
+    error_message: Optional[str] = None  # Store error details if failed
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)  # For time-series analysis

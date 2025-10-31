@@ -29,4 +29,18 @@ Interactive use case: Causal Thesis Builder (user-driven DAG with an LLM co-pilo
 
 integrate these loading indicators into specific parts of the app?
 
+  1. View LLM Performance Metrics:
+  curl http://localhost:8000/metrics/llm?hours=24
+  2. Check Cache Hit Rates:
+  curl http://localhost:8000/metrics/cache
+  3. View Prompt Versions:
+  curl http://localhost:8000/metrics/prompts
+  4. Run Tests:
+  cd backend
+  pytest tests/test_prompts.py -v
+  5. Clear Cache (if needed):
+  curl -X POST http://localhost:8000/metrics/cache/clear
+  # Or clear specific type:
+  curl -X POST "http://localhost:8000/metrics/cache/clear?prefix=composition"
+
 #python -m uvicorn app.main:app --reload --port 8000 --log-level debug

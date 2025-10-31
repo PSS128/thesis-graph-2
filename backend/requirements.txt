@@ -27,3 +27,8 @@ python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
 email-validator
+
+# Testing
+pytest
+pytest-asyncio
+httpx  # For testing FastAPI endpoints
