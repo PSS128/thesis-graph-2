@@ -28,17 +28,6 @@ Frontend reads the API base from frontend/.env.local → NEXT_PUBLIC_API_URL=htt
   cd backend
   python migrations/add_llm_metrics.py  # Run migrations
 
-  Code Quality
-
-  # Backend linting
-  cd backend
-  black app/  # Format code
-  mypy app/   # Type checking
-
-  # Frontend linting
-  cd frontend
-  npm run lint
-
   ---
   📖 Documentation
 
@@ -74,14 +63,6 @@ Frontend reads the API base from frontend/.env.local → NEXT_PUBLIC_API_URL=htt
   - Study design suggestions - RCT, IV, DiD recommendations
 
 Open a focused PR with a brief before/after note or GIF. Be kind and constructive in reviews.
-
-🌟 Spread the word
-
-⭐ Star the repo
-
-Share a short demo GIF
-
-Post a thread and tag #ThesisGraph
 
 Your support helps prioritize citations, compose-from-graph, and save/load projects.
 
