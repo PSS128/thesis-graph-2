@@ -11,26 +11,67 @@ Thesis-Graph is not a chatbot. It’s a visual workspace that helps you turn tex
 👨‍💻 Tech stack
 
 Frontend: Next.js (TypeScript) + React Flow for interactive graphs
-
 Backend: FastAPI (Python) with CORS (Uvicorn for local dev)
-
 MVP endpoints: GET / (health) · POST /extract/nodes (claims + optional THESIS) · POST /edges/suggest (naive links)
-
 Planned: SQLModel/SQLite for projects, FAISS + sentence-transformers for retrieval/citations, and LLM-backed extraction/rationales (OpenAI or local Llama via HF)
-
 Frontend reads the API base from frontend/.env.local → NEXT_PUBLIC_API_URL=http://localhost:8000
 
-✍️ Contributing
 
-We welcome improvements—UX polish, retrieval quality, prompt design, tests, and docs.
+  Running Tests
 
-Quick dev
+  cd backend
+  pytest
+  pytest -v tests/test_citations.py  # Specific test file
 
-backend
-uvicorn app.main:app --reload --port 8000
+  Database Migrations
 
-frontend
-npm run dev
+  cd backend
+  python migrations/add_llm_metrics.py  # Run migrations
+
+  Code Quality
+
+  # Backend linting
+  cd backend
+  black app/  # Format code
+  mypy app/   # Type checking
+
+  # Frontend linting
+  cd frontend
+  npm run lint
+
+  ---
+  📖 Documentation
+
+  - docs/user-guide.md - How to use Thesis-Graph (TODO)
+  - docs/api.md - Full endpoint documentation (TODO)
+  - backend/app/prompts/README.md - How prompts work
+  - CONTRIBUTING.md - Development workflow (TODO)
+
+  ---
+  🗺️ Roadmap
+
+  Current Features ✅
+
+  - Node extraction (THESIS, CLAIM, EVIDENCE, VARIABLE)
+  - Edge suggestions with causal rationale
+  - Essay composition from graph
+  - Interactive graph canvas
+  - User authentication
+  - Project persistence (SQLite)
+  - LLM metrics & monitoring
+  - Prompt versioning system
+  - Intelligent caching
+
+  Planned Features 🚧
+
+  - Citation linking - Map claims back to source documents
+  - FAISS retrieval - Semantic search for evidence
+  - Graph critique - Detect cycles, colliders, confounding paths
+  - Export formats - LaTeX, Markdown, PDF
+  - Collaborative editing - Multi-user projects
+  - Mobile-friendly UI - Responsive canvas
+  - Self-hosted LLMs - Llama via Hugging Face
+  - Study design suggestions - RCT, IV, DiD recommendations
 
 Open a focused PR with a brief before/after note or GIF. Be kind and constructive in reviews.
 
